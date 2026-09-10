@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="frame-ancestors 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Assessment Test | Proctored</title>
+  <link rel="stylesheet" href="styles.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    .logo-img { height: 36px; width: auto; vertical-align: middle; margin-right: 8px; }
+    .char-count { font-size: 0.8rem; color: var(--muted); margin-top: 0.3rem; }
+    .char-count.ok { color: var(--success); }
+    .char-count.bad { color: var(--danger); }
+    .face-status { font-size: 0.8rem; margin-top: 0.3rem; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <div class="logo">
+        <!-- Company Logo (SVG placeholder - replace with your logo URL) -->
+        <img src="qrs-logo.png" alt="QRS" style="height:32px;width:auto;background:#fff;border-radius:6px;padding:3px 6px;margin-right:8px;">
+        Proctored Assessment
+      </div>
+      <div id="headerInfo" style="font-size:0.9rem;"></div>
+    </div>
+  </header>
+
+  <!-- Pre-start screen -->
+  <div class="container" id="preStart" style="margin-top:2rem; display:none;">
+    <div class="card" style="max-width:600px; margin:0 auto; text-align:center;">
+      <div style="margin-bottom:1rem;">
+        <img src="qrs-logo.png" alt="QRS" style="height:40px;width:auto;background:#fff;border-radius:8px;padding:4px 8px;">
+      </div>
+      <h2 style="margin-bottom:1rem;">Welcome to your Assessment</h2>
+      <div id="preInfo"></div>
+      <div class="alert alert-warning" style="text-align:left; margin:1.25rem 0;">
+        <strong>Important Rules:</strong>
+        <ul style="margin:0.5rem 0 0 1.2rem; font-size:0.9rem;">
+          <li>Camera must remain ON throughout the test</li>
+          <li>Do not switch tabs, minimize the browser, or open developer tools (3 flags max)</li>
+          <li>Only one person should be visible in frame at all times</li>
+          <li>Copying or pasting text into coding answers is not permitted and will be flagged</li>
+          <li>Coding answers must be at least <strong>50 characters</strong></li>
+          <li>Timer cannot be paused</li>
+          <li>Submit before time ends</li>
+        </ul>
+      </div>
+      <div id="mobileBlock" class="alert alert-danger" style="display:none; text-align:left;">
+        <strong>Desktop or laptop required.</strong> This proctored assessment needs a webcam and a larger screen and cannot be taken on a mobile phone or tablet. Please reopen this link on a desktop/laptop computer.
+      </div>
+      <button class="btn btn-primary" id="startBtn" onclick="startTest()" style="padding:0.9rem 2rem; font-size:1.1rem;">
+        🎥 Enable Camera & Start Test
+      </button>
+      <p style="margin-top:1rem; font-size:0.85rem; color:var(--muted);">You will be asked for camera + microphone permission</p>
+    </div>
+  </div>
+
+  <!-- Main Test UI -->
+  <div id="testUI" style="display:none;">
+    <!-- Proctor Panel -->
+    <div class="proctor-panel" id="proctorPanel">
+      <div class="proctor-header">
+        <span>🎥 Live Proctoring</span>
+        <span id="flagBadge" class="flag-count">0/3</span>
+      </div>
+      <video id="cameraFeed" autoplay muted playsinline></video>
+      <canvas id="faceCanvas" style="display:none;"></canvas>
+      <div class="proctor-stats">
+        <div>Status: <span id="proctorStatus" style="color:var(--success);">● Active</span></div>
+        <div class="face-status">Face: <span id="faceStatus">Detecting...</span></div>
+        <div style="margin-top:0.3rem;">Flags: <span id="flagCountText">0</span> / 3</div>
+        <div id="photoCountHint" style="margin-top:0.2rem; font-size:0.72rem; color:var(--muted);"></div>
+        <div id="lastFlag" style="margin-top:0.3rem; font-size:0.75rem; color:var(--muted);"></div>
+      </div>
+    </div>
+
+    <div class="container" style="margin-top:1.5rem; max-width:800px;">
+      <!-- Timer + Progress -->
+      <div class="card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
+        <div>
+          <div style="font-size:0.85rem; color:var(--muted);">Time Remaining</div>
+          <div class="timer" id="timer">00:00</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:0.85rem; color:var(--muted);">Question <span id="qNum">1</span> of <span id="qTotal">0</span></div>
+          <div class="progress-bar" style="width:200px; margin:0.4rem 0 0 auto;">
+            <div class="progress-fill" id="progressFill" style="width:0%"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Flag Warning -->
+      <div id="flagWarning" class="alert alert-danger" style="display:none;">
+        ⚠️ <strong>Warning!</strong> <span id="flagMsg"></span>
+      </div>
+
+      <!-- Question Area -->
+      <div class="card question-card" id="questionArea">
+        <!-- Dynamically filled -->
+      </div>
+
+      <!-- Navigation -->
+      <div class="nav-buttons">
+        <button class="btn btn-outline" id="prevBtn" onclick="prevQuestion()" disabled>← Previous</button>
+        <button class="btn btn-primary" id="nextBtn" onclick="nextQuestion()">Next →</button>
+        <button class="btn btn-success" id="submitBtn" onclick="confirmSubmit()" style="display:none;">Submit Assessment</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Completed Screen -->
+  <div class="container" id="completedUI" style="display:none; margin-top:2rem;">
+    <div class="card" style="max-width:500px; margin:0 auto; text-align:center;">
+      <img src="qrs-logo.png" alt="QRS" style="height:40px;width:auto;background:#fff;border-radius:8px;padding:4px 8px;">
+      <h2 style="color:var(--success);">✅ Assessment Submitted</h2>
+      <p id="scoreDisplay" style="font-size:1.3rem; margin:1rem 0;"></p>
+      <p style="color:var(--muted);">You may now close this window. Results will be reviewed by the team.</p>
+    </div>
+  </div>
+
+  <!-- Invalid Link -->
+  <div class="container" id="invalidUI" style="display:none; margin-top:2rem;">
+    <div class="card" style="max-width:500px; margin:0 auto; text-align:center;">
+      <h2 style="color:var(--danger);">Invalid or Expired Link</h2>
+      <p>Please contact the recruiter for a valid assessment link.</p>
+    </div>
+  </div>
+
+  <!-- Not Yet Available (scheduled for later) -->
+  <div class="container" id="notYetUI" style="display:none; margin-top:2rem;">
+    <div class="card" style="max-width:500px; margin:0 auto; text-align:center;">
+      <img src="qrs-logo.png" alt="QRS" style="height:40px;width:auto;background:#fff;border-radius:8px;padding:4px 8px;">
+      <h2 style="color:var(--warning);">⏳ Assessment Not Yet Available</h2>
+      <p id="notYetMsg" style="margin:1rem 0; color:var(--muted);"></p>
+      <p style="font-size:0.85rem;color:var(--muted);">This page will unlock automatically at the scheduled time — no need to refresh.</p>
+    </div>
+  </div>
+
+  <!-- Link Expired -->
+  <div class="container" id="linkExpiredUI" style="display:none; margin-top:2rem;">
+    <div class="card" style="max-width:500px; margin:0 auto; text-align:center;">
+      <h2 style="color:var(--danger);">⏰ Link Expired</h2>
+      <p id="expiredMsg" style="margin:1rem 0; color:var(--muted);"></p>
+      <p>Please contact the recruiter for a new link.</p>
+    </div>
+  </div>
+
+  <script src="questions.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+  <script>
+    // ========== State ==========
+    const FACE_MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
+    let faceModelsReady = false;
+    let assessment = null;
+    let questions = [];
+    let currentIndex = 0;
+    let answers = {};
+    let flags = [];
+    let timeLeft = 0;
+    let timerInterval = null;
+    let stream = null;
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let isRecording = false;
+    let faceCheckInterval = null;
+    let noFaceCount = 0;
+
+    // ========== Init ==========
+    async function init() {
+      const params = new URLSearchParams(window.location.search);
+      const id = params.get('id');
+      const token = params.get('token');
+
+      if (!id || !token) {
+        document.getElementById('invalidUI').style.display = 'block';
+        return;
+      }
+
+      const list = JSON.parse(localStorage.getItem('assessments') || '[]');
+      assessment = list.find(a => a.id === id && a.token === token);
+
+      // Not on this device's local storage — this link was likely generated on a
+      // different computer (e.g. the admin's PC). Fall back to the shared backend.
+      if (!assessment) {
+        try {
+          const res = await fetch(`${BACKEND_BASE}/api/assessments/${id}`);
+          if (res.ok) {
+            const remote = await res.json();
+            if (remote && remote.token === token) {
+              assessment = remote;
+              // Cache locally for the rest of this session (answers, flags, etc.)
+              const merged = list.filter(a => a.id !== id);
+              merged.push(assessment);
+              localStorage.setItem('assessments', JSON.stringify(merged));
+            }
+          }
+        } catch (e) {
+          console.warn('Backend lookup failed (backend may not be running):', e);
+        }
+      }
+
+      if (!assessment) {
+        document.getElementById('invalidUI').style.display = 'block';
+        return;
+      }
+
+      if (assessment.status === 'completed') {
+        document.getElementById('completedUI').style.display = 'block';
+        document.getElementById('scoreDisplay').textContent = `Score: ${assessment.score} / ${assessment.totalMarks}`;
+        return;
+      }
+
+      // ===== Link expiry check =====
+      if (assessment.expiresAt && Date.now() > new Date(assessment.expiresAt).getTime()) {
+        document.getElementById('linkExpiredUI').style.display = 'block';
+        document.getElementById('expiredMsg').textContent =
+          'This link expired on ' + new Date(assessment.expiresAt).toLocaleString() + '.';
+        return;
+      }
+
+      // ===== Scheduled start check (not open yet) =====
+      if (assessment.scheduledAt) {
+        const scheduledMs = new Date(assessment.scheduledAt).getTime();
+        if (Date.now() < scheduledMs) {
+          document.getElementById('notYetUI').style.display = 'block';
+          document.getElementById('notYetMsg').textContent =
+            'Your assessment is scheduled to start at ' + new Date(assessment.scheduledAt).toLocaleString() + '.';
+          // Auto-recheck every 15s so the candidate doesn't have to refresh manually
+          setTimeout(() => location.reload(), 15000);
+          return;
+        }
+      }
+
+      const data = getAssessment(assessment.role, assessment.level);
+      if (!data) {
+        alert('Questions not found');
+        return;
+      }
+      questions = data.questions;
+      // Use the admin's custom per-candidate duration if set, otherwise the role/level default
+      const effectiveDuration = assessment.duration || data.duration;
+      timeLeft = effectiveDuration * 60;
+
+      // Verify total marks = 100
+      const total = getTotalMarks(questions);
+      if (total !== 100) {
+        console.warn('Total marks is', total, '- expected 100');
+      }
+
+      document.getElementById('preStart').style.display = 'block';
+      document.getElementById('preInfo').innerHTML = `
+        <p><strong>${assessment.name}</strong></p>
+        <p>${assessment.role.toUpperCase()} • <span class="badge badge-${assessment.level}">${assessment.level}</span></p>
+        <p style="margin-top:0.75rem;">Duration: <strong>${effectiveDuration} minutes</strong> | Total Marks: <strong>100</strong></p>
+        <p style="font-size:0.9rem; color:var(--muted);">${questions.length} Questions</p>
+      `;
+
+      // ===== Mobile / tablet block =====
+      if (isMobileDevice()) {
+        document.getElementById('mobileBlock').style.display = 'block';
+        document.getElementById('startBtn').disabled = true;
+        document.getElementById('startBtn').style.opacity = '0.5';
+        document.getElementById('startBtn').style.cursor = 'not-allowed';
+      }
+    }
+
+    function isMobileDevice() {
+      const uaMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(navigator.userAgent);
+      const touchSmallScreen = ('ontouchstart' in window) && Math.min(window.innerWidth, window.innerHeight) < 820;
+      return uaMobile || touchSmallScreen;
+    }
+
+    // ========== Start Test ==========
+    async function startTest() {
+      if (isMobileDevice()) {
+        alert('This assessment requires a desktop or laptop with a webcam.');
+        return;
+      }
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, 
+          audio: true 
+        });
+        const video = document.getElementById('cameraFeed');
+        video.srcObject = stream;
+        await video.play();
+        // Load face detection models in the background (non-blocking for start)
+        loadFaceModels();
+      } catch (err) {
+        alert('Camera access is mandatory. Please allow camera & microphone and try again.');
+        console.error(err);
+        return;
+      }
+
+      assessment.status = 'in-progress';
+      assessment.startedAt = new Date().toISOString();
+      saveAssessment();
+
+      document.getElementById('preStart').style.display = 'none';
+      document.getElementById('testUI').style.display = 'block';
+
+      document.getElementById('headerInfo').innerHTML = `${assessment.name} • ${assessment.role} • <span class="badge badge-${assessment.level}">${assessment.level}</span>`;
+      document.getElementById('qTotal').textContent = questions.length;
+
+      setupProctoring();
+      startFaceDetection();
+      assessment.photoHistory = assessment.photoHistory || [];
+      startPhotoCapture();
+      startTimer();
+      renderQuestion();
+    }
+
+    const BACKEND_BASE = ''; // TODO: if you deploy this page on Netlify (separate from the backend), set this to your Render backend URL, e.g. 'https://qrs-round2-backend.onrender.com' (no trailing slash). Leave as '' only when this page and backend.py are served from the same origin/localhost.
+    let backendOverflow = false; // once local storage fills, keep sending new photos straight to backend
+
+    function saveAssessment() {
+      const list = JSON.parse(localStorage.getItem('assessments') || '[]');
+      const idx = list.findIndex(a => a.id === assessment.id);
+      if (idx === -1) return;
+      list[idx] = assessment;
+      try {
+        localStorage.setItem('assessments', JSON.stringify(list));
+      } catch (e) {
+        // Storage quota exceeded — trim local photo history (keep most recent few for quick admin preview)
+        // and rely on the backend for the full session's worth of photos going forward.
+        console.warn('localStorage full — trimming local photo history, switching photo storage to backend', e);
+        backendOverflow = true;
+        if (assessment.photoHistory && assessment.photoHistory.length > 3) {
+          assessment.photoHistory = assessment.photoHistory.slice(-3);
+        }
+        list[idx] = assessment;
+        try {
+          localStorage.setItem('assessments', JSON.stringify(list));
+        } catch (e2) {
+          console.warn('Still over quota after trimming; will keep only the latest photo locally', e2);
+        }
+      }
+      // Push to the shared backend so admin (possibly on a different device) sees
+      // live progress and final results. photoHistory is stripped — the backend keeps
+      // its own copy via the dedicated /photos endpoint and preserves it when this key is absent.
+      syncAssessmentToBackend();
+    }
+
+    async function syncAssessmentToBackend() {
+      try {
+        const { photoHistory, ...payload } = assessment;
+        await fetch(`${BACKEND_BASE}/api/assessments/${assessment.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } catch (e) {
+        console.warn('Backend sync failed (backend may not be running):', e);
+      }
+    }
+
+    // Best-effort: send a single photo to the Flask backend so it's kept even if localStorage can't hold it all.
+    async function sendPhotoToBackend(imgDataUrl, atIso) {
+      try {
+        await fetch(`${BACKEND_BASE}/api/assessments/${assessment.id}/photos`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ img: imgDataUrl, at: atIso })
+        });
+      } catch (e) {
+        console.warn('Backend photo upload failed (backend may not be running):', e);
+      }
+    }
+
+    // ========== Proctoring ==========
+    function setupProctoring() {
+      // Tab / window switch
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          addFlag('Browser tab minimized or switched away');
+        }
+      });
+
+      // Window blur (switched to another app)
+      window.addEventListener('blur', () => {
+        addFlag('Window lost focus (switched to another application)');
+      });
+
+      // Disable right click everywhere
+      document.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        addFlag('Right-click attempted');
+      });
+
+      // Disable text selection (makes copying harder) except inside inputs/textareas
+      document.addEventListener('selectstart', e => {
+        const tag = (e.target.tagName || '').toLowerCase();
+        if (tag !== 'textarea' && tag !== 'input') e.preventDefault();
+      });
+
+      // Block common shortcuts
+      document.addEventListener('keydown', e => {
+        // DevTools (F12, Ctrl+Shift+I/J/C/K, Cmd+Opt+I on Mac)
+        if (e.key === 'F12' ||
+            (e.ctrlKey && e.shiftKey && ['I','J','C','K'].includes(e.key.toUpperCase())) ||
+            (e.metaKey && e.altKey && ['I','J','C'].includes(e.key.toUpperCase()))) {
+          e.preventDefault();
+          addFlag('Developer tools / Inspect attempted');
+        }
+        // View source
+        if ((e.ctrlKey || e.metaKey) && e.key.toUpperCase() === 'U') {
+          e.preventDefault();
+          addFlag('View source attempted');
+        }
+        // Print / Save
+        if ((e.ctrlKey || e.metaKey) && ['P','S'].includes(e.key.toUpperCase())) {
+          e.preventDefault();
+        }
+      });
+
+      // ===== Copy / paste detection =====
+      document.addEventListener('paste', e => {
+        const tag = (e.target.tagName || '').toLowerCase();
+        if (tag === 'textarea') {
+          addFlag('Paste detected in coding/answer box');
+        } else {
+          addFlag('Paste attempt detected');
+        }
+      });
+      document.addEventListener('copy', e => {
+        addFlag('Copy attempt detected');
+      });
+      document.addEventListener('cut', e => {
+        addFlag('Cut attempt detected');
+      });
+
+      // ===== Basic DevTools-open heuristic =====
+      // If the outer window is meaningfully larger than the inner viewport, devtools panel is likely open (docked).
+      let devToolsWarned = false;
+      setInterval(() => {
+        const widthDiff = window.outerWidth - window.innerWidth;
+        const heightDiff = window.outerHeight - window.innerHeight;
+        if (widthDiff > 160 || heightDiff > 160) {
+          if (!devToolsWarned) {
+            addFlag('Developer tools panel appears to be open');
+            devToolsWarned = true;
+          }
+        } else {
+          devToolsWarned = false;
+        }
+      }, 2000);
+
+      // Camera ended
+      if (stream) {
+        stream.getVideoTracks()[0].onended = () => {
+          addFlag('Camera disconnected or permission revoked');
+        };
+      }
+
+      console.log('Proctoring active');
+    }
+
+    // Load face-api.js tiny face detector models (small, fast, runs client-side)
+    async function loadFaceModels() {
+      try {
+        await faceapi.nets.tinyFaceDetector.loadFromUri(FACE_MODEL_URL);
+        faceModelsReady = true;
+        console.log('Face detection models loaded');
+      } catch (e) {
+        console.warn('Face model load failed, falling back to brightness heuristic', e);
+        faceModelsReady = false;
+      }
+    }
+
+    // Real face-count detection (multiple faces / no face) with brightness fallback
+    let multiFaceCount = 0;
+    function startFaceDetection() {
+      const video = document.getElementById('cameraFeed');
+      const canvas = document.getElementById('faceCanvas');
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      noFaceCount = 0;
+      multiFaceCount = 0;
+
+      faceCheckInterval = setInterval(async () => {
+        if (!video.videoWidth) return;
+        const faceEl = document.getElementById('faceStatus');
+
+        if (faceModelsReady && window.faceapi) {
+          try {
+            const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 }));
+            const count = detections.length;
+
+            if (count === 0) {
+              noFaceCount++;
+              multiFaceCount = 0;
+              faceEl.textContent = '⚠️ No face detected';
+              faceEl.style.color = 'var(--warning)';
+              if (noFaceCount >= 3) { // ~9 seconds
+                addFlag('No face detected in camera frame');
+                noFaceCount = 0;
+              }
+            } else if (count > 1) {
+              multiFaceCount++;
+              noFaceCount = 0;
+              faceEl.textContent = `⚠️ ${count} faces detected`;
+              faceEl.style.color = 'var(--danger)';
+              if (multiFaceCount >= 2) { // ~6 seconds sustained
+                addFlag(`Multiple faces (${count}) detected in frame`);
+                multiFaceCount = 0;
+              }
+            } else {
+              noFaceCount = 0;
+              multiFaceCount = 0;
+              faceEl.textContent = '● Face present';
+              faceEl.style.color = 'var(--success)';
+            }
+            return;
+          } catch (e) {
+            console.warn('Face detection error, using brightness fallback', e);
+          }
+        }
+
+        // ---- Fallback: brightness heuristic (used until models load, or if detection errors) ----
+        canvas.width = 160;
+        canvas.height = 120;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+        let sum = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          sum += (data[i] + data[i+1] + data[i+2]) / 3;
+        }
+        const avgBrightness = sum / (data.length / 4);
+
+        if (avgBrightness < 25) {
+          noFaceCount++;
+          faceEl.textContent = '⚠️ Low light / Covered?';
+          faceEl.style.color = 'var(--warning)';
+          if (noFaceCount >= 4) {
+            addFlag('Camera appears covered or face not visible (low light)');
+            noFaceCount = 0;
+          }
+        } else if (avgBrightness > 220) {
+          faceEl.textContent = '⚠️ Too bright / Glare';
+          faceEl.style.color = 'var(--warning)';
+        } else {
+          noFaceCount = 0;
+          faceEl.textContent = '● Face present (loading AI model…)';
+          faceEl.style.color = 'var(--success)';
+        }
+      }, 3000);
+    }
+
+
+    // ========== Periodic photo for admin proctoring (Option B) ==========
+    let photoInterval = null;
+    function startPhotoCapture() {
+      const video = document.getElementById('cameraFeed');
+      const canvas = document.createElement('canvas');
+      // Capture immediately once video is ready, then every 30s
+      const capture = () => {
+        if (!video || !video.videoWidth || video.readyState < 2) return;
+        try {
+          // Full native camera resolution, near-lossless quality (no downscaling/compression)
+          const w = video.videoWidth;
+          const h = video.videoHeight;
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(video, 0, 0, w, h);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+          assessment.lastPhoto = dataUrl;
+          assessment.lastPhotoAt = new Date().toISOString();
+          if (!assessment.photoHistory) assessment.photoHistory = [];
+          assessment.photoHistory.push({ img: dataUrl, at: assessment.lastPhotoAt });
+          // Keep all photos from start to end (for review)
+          saveAssessment();
+          // Always also send to backend (full-resolution copy, safe from localStorage limits)
+          sendPhotoToBackend(dataUrl, assessment.lastPhotoAt);
+          const cnt = document.getElementById('photoCountHint');
+          if (cnt) cnt.textContent = assessment.photoHistory.length + ' photos stored';
+          console.log('Proctor photo captured');
+        } catch (e) {
+          console.warn('Photo capture failed', e);
+        }
+      };
+      // First capture after short delay
+      setTimeout(capture, 3000);
+      photoInterval = setInterval(capture, 30000);
+    }
+
+    function addFlag(reason) {
+      if (flags.length >= 3) return;
+      // Avoid duplicate rapid flags
+      if (flags.length > 0 && flags[flags.length-1].reason === reason) return;
+
+      flags.push({ reason, time: new Date().toISOString() });
+      assessment.flags = flags;
+      if (flags.length >= 3) {
+        assessment.status = 'flagged';
+      }
+      saveAssessment();
+
+      document.getElementById('flagCountText').textContent = flags.length;
+      document.getElementById('flagBadge').textContent = `${flags.length}/3`;
+      document.getElementById('lastFlag').textContent = `Last: ${reason}`;
+      document.getElementById('flagWarning').style.display = 'block';
+      document.getElementById('flagMsg').textContent = reason + (flags.length >= 3 ? ' — Maximum flags reached. Assessment will be reviewed.' : '');
+
+      if (flags.length >= 3) {
+        document.getElementById('proctorStatus').textContent = '● Flagged';
+        document.getElementById('proctorStatus').style.color = 'var(--danger)';
+      }
+    }
+
+    // ========== Timer ==========
+    function startTimer() {
+      updateTimerDisplay();
+      timerInterval = setInterval(() => {
+        timeLeft--;
+        updateTimerDisplay();
+        if (timeLeft <= 0) {
+          clearInterval(timerInterval);
+          submitTest(true);
+        }
+      }, 1000);
+    }
+
+    function updateTimerDisplay() {
+      const m = Math.floor(timeLeft / 60);
+      const s = timeLeft % 60;
+      const el = document.getElementById('timer');
+      el.textContent = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+      el.className = 'timer';
+      if (timeLeft < 300) el.classList.add('warning');
+      if (timeLeft < 60) el.classList.add('danger');
+    }
+
+    // ========== Questions ==========
+    function renderQuestion() {
+      const q = questions[currentIndex];
+      document.getElementById('qNum').textContent = currentIndex + 1;
+      document.getElementById('progressFill').style.width = `${((currentIndex+1)/questions.length)*100}%`;
+
+      document.getElementById('prevBtn').disabled = currentIndex === 0;
+      if (currentIndex === questions.length - 1) {
+        document.getElementById('nextBtn').style.display = 'none';
+        document.getElementById('submitBtn').style.display = 'inline-flex';
+      } else {
+        document.getElementById('nextBtn').style.display = 'inline-flex';
+        document.getElementById('submitBtn').style.display = 'none';
+      }
+
+      let html = `
+        <div class="question-meta">
+          <span>Question ${currentIndex + 1}</span>
+          <span>•</span>
+          <span style="text-transform:uppercase; font-weight:600; color:var(--primary);">${q.type}</span>
+          <span>•</span>
+          <span>${q.marks} Marks</span>
+        </div>
+        <h3 style="margin-bottom:1rem; font-size:1.15rem;">${q.question}</h3>
+      `;
+
+      if (q.type === 'mcq') {
+        const selected = answers[q.id];
+        html += q.options.map((opt, i) => `
+          <label class="option ${selected === i ? 'selected' : ''}">
+            <input type="radio" name="q_${q.id}" value="${i}" ${selected === i ? 'checked' : ''} onchange="saveAnswer('${q.id}', ${i})">
+            <span>${opt}</span>
+          </label>
+        `).join('');
+      } else if (q.type === 'coding') {
+        const val = answers[q.id] || '';
+        const minLen = q.minLength || 50;
+        const len = val.length;
+        const ok = len >= minLen;
+        html += `
+          <p style="font-size:0.85rem; color:var(--muted); margin-bottom:0.5rem;">Language / Format: <strong>${q.language || 'text'}</strong> • Minimum ${minLen} characters required</p>
+          <textarea class="code-area" id="code_${q.id}" placeholder="Write your complete answer here (minimum ${minLen} characters)..." 
+            oninput="onCodingInput('${q.id}', ${minLen})">${val}</textarea>
+          <div class="char-count ${ok ? 'ok' : 'bad'}" id="charCount_${q.id}">
+            ${len} / ${minLen} characters ${ok ? '✓' : '(minimum required)'}
+          </div>
+        `;
+      } else if (q.type === 'voice') {
+        const hasRecording = !!answers[q.id];
+        html += `
+          <p style="font-size:0.9rem; margin-bottom:0.75rem;">Record your spoken answer (recommended 1–2 minutes)</p>
+          <div class="voice-controls">
+            <button class="btn ${isRecording ? 'btn-danger' : 'btn-primary'}" id="recBtn" onclick="toggleRecording('${q.id}')">
+              ${isRecording ? '⏹ Stop Recording' : '🎤 Start Recording'}
+            </button>
+            <span id="recStatus" class="${isRecording ? 'recording' : ''}">${isRecording ? 'Recording...' : (hasRecording ? '✅ Answer recorded' : 'Not recorded yet')}</span>
+          </div>
+          <div id="audioPreview" style="margin-top:0.75rem;"></div>
+        `;
+      }
+
+      document.getElementById('questionArea').innerHTML = html;
+
+      // Restore audio preview
+      if (q.type === 'voice' && answers[q.id]) {
+        const preview = document.getElementById('audioPreview');
+        if (preview) {
+          preview.innerHTML = `<audio controls src="${answers[q.id]}" style="width:100%;"></audio>`;
+        }
+      }
+    }
+
+    function onCodingInput(qid, minLen) {
+      const ta = document.getElementById('code_' + qid);
+      const val = ta.value;
+      answers[qid] = val;
+      assessment.answers = answers;
+      saveAssessment();
+
+      const len = val.length;
+      const el = document.getElementById('charCount_' + qid);
+      if (el) {
+        el.textContent = `${len} / ${minLen} characters ${len >= minLen ? '✓' : '(minimum required)'}`;
+        el.className = 'char-count ' + (len >= minLen ? 'ok' : 'bad');
+      }
+    }
+
+    function saveAnswer(qid, value) {
+      answers[qid] = value;
+      assessment.answers = answers;
+      saveAssessment();
+    }
+
+    function nextQuestion() {
+      // Validate coding min length before allowing next
+      const q = questions[currentIndex];
+      if (q.type === 'coding') {
+        const val = answers[q.id] || '';
+        const minLen = q.minLength || 50;
+        if (val.trim().length < minLen) {
+          alert(`Please write at least ${minLen} characters for this coding/answer question before proceeding.`);
+          return;
+        }
+      }
+      if (currentIndex < questions.length - 1) {
+        currentIndex++;
+        renderQuestion();
+      }
+    }
+
+    function prevQuestion() {
+      if (currentIndex > 0) {
+        currentIndex--;
+        renderQuestion();
+      }
+    }
+
+    // ========== Voice Recording ==========
+    async function toggleRecording(qid) {
+      if (isRecording) {
+        mediaRecorder.stop();
+        isRecording = false;
+        renderQuestion();
+        return;
+      }
+
+      try {
+        const audioStream = new MediaStream(stream.getAudioTracks());
+        mediaRecorder = new MediaRecorder(audioStream);
+        audioChunks = [];
+
+        mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+        mediaRecorder.onstop = () => {
+          const blob = new Blob(audioChunks, { type: 'audio/webm' });
+          const url = URL.createObjectURL(blob);
+          answers[qid] = url;
+          assessment.answers = answers;
+          saveAssessment();
+          const preview = document.getElementById('audioPreview');
+          if (preview) {
+            preview.innerHTML = `<audio controls src="${url}" style="width:100%;"></audio>`;
+          }
+        };
+
+        mediaRecorder.start();
+        isRecording = true;
+        renderQuestion();
+      } catch (err) {
+        alert('Could not start recording. Check microphone permission.');
+        console.error(err);
+      }
+    }
+
+    // ========== Submit ==========
+    function confirmSubmit() {
+      // Final validation for all coding questions
+      for (const q of questions) {
+        if (q.type === 'coding') {
+          const val = answers[q.id] || '';
+          const minLen = q.minLength || 50;
+          if (val.trim().length < minLen) {
+            alert(`Please complete all coding questions with at least ${minLen} characters.\n\nQuestion still incomplete.`);
+            // Jump to that question
+            currentIndex = questions.findIndex(x => x.id === q.id);
+            renderQuestion();
+            return;
+          }
+        }
+      }
+      if (!confirm('Are you sure you want to submit the assessment? You cannot change answers after submission.')) return;
+      submitTest(false);
+    }
+
+    function submitTest(auto = false) {
+      clearInterval(timerInterval);
+      if (faceCheckInterval) clearInterval(faceCheckInterval);
+      if (photoInterval) clearInterval(photoInterval);
+      if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+      }
+
+      // Auto score MCQ only
+      let score = 0;
+      questions.forEach(q => {
+        if (q.type === 'mcq' && answers[q.id] === q.correct) {
+          score += q.marks;
+        }
+      });
+
+      assessment.status = 'completed';
+      assessment.completedAt = new Date().toISOString();
+      assessment.score = score;
+      assessment.answers = answers;
+      assessment.flags = flags;
+      saveAssessment();
+
+      document.getElementById('testUI').style.display = 'none';
+      document.getElementById('completedUI').style.display = 'block';
+      document.getElementById('scoreDisplay').innerHTML = `
+        Auto-scored (MCQ only): <strong>${score} / 100</strong><br>
+        <small style="color:var(--muted);">Coding & Voice answers will be reviewed manually by the team.</small>
+        ${flags.length > 0 ? `<br><span style="color:var(--danger);">⚠️ ${flags.length} proctoring flag(s) recorded</span>` : ''}
+      `;
+    }
+
+    // Start
+    init();
+  </script>
+</body>
+</html>

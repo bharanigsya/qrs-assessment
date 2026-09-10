@@ -1,0 +1,53 @@
+QRS Assessment — Deploy FREE on Render (public links for candidates)
+====================================================================
+
+WHY: localhost links only work on YOUR computer.
+     Render gives you a public URL that works for every candidate.
+
+STEP 1 — Create free account
+  Go to: https://render.com
+  Sign up with Google / GitHub / email (free)
+
+STEP 2 — Prepare the project
+  You already have these files (required for Render):
+  - backend.py
+  - requirements.txt   (flask, flask-cors, gunicorn)
+  - Procfile           (web: gunicorn backend:app)
+
+STEP 3 — Upload to GitHub (easiest way)
+  1. Create a new GitHub repository (public or private)
+  2. Upload the whole assessment-platform folder contents
+  3. Or drag-drop files on github.com → your repo → Add file
+
+STEP 4 — Create Web Service on Render
+  1. Render Dashboard → "New +" → "Web Service"
+  2. Connect your GitHub repo (or use "Public Git repository")
+  3. Settings:
+       Name:           qrs-assessment   (any name)
+       Region:         closest to you
+       Branch:         main (or master)
+       Runtime:        Python 3
+       Build Command:  pip install -r requirements.txt
+       Start Command:  gunicorn backend:app
+  4. Instance type: Free
+  5. Click "Create Web Service"
+
+STEP 5 — Wait for deploy (2–5 minutes)
+  When status is Live, you get a URL like:
+     https://qrs-assessment-xxxx.onrender.com
+
+STEP 6 — Use the platform
+  Admin:      https://YOUR-URL.onrender.com/admin.html
+  Login:      admin  /  qrs@2026
+  Candidates: links generated from admin will use YOUR-URL
+              (works on any phone / laptop)
+
+NOTES
+- Free tier may sleep after ~15 min idle; first open can take 30–60 sec to wake
+- Data is stored on the server in data/assessments.json
+- Change password in Admin → Settings after first login
+
+TROUBLESHOOT IF BUILD FAILS
+- Build Command must be exactly:  pip install -r requirements.txt
+- Start Command must be exactly:  gunicorn backend:app
+- requirements.txt must include: flask, flask-cors, gunicorn

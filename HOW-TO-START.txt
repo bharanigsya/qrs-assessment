@@ -1,0 +1,45 @@
+QRS 2nd Round Assessment - HOW TO START
+========================================
+
+ADMIN LOGIN
+  Username : admin
+  Password : qrs@2026
+
+----------------------------------------
+A) TEST ON YOUR OWN PC ONLY (localhost)
+----------------------------------------
+1. Extract this folder
+2. Open terminal in this folder
+3. pip install -r requirements.txt
+4. python backend.py
+5. Open:  http://localhost:5000
+6. Admin: http://localhost:5000/admin.html
+
+IMPORTANT:
+  Links like http://localhost:5000/test.html?... 
+  work ONLY on the same computer.
+  Candidates on other phones/PCs cannot open localhost.
+
+----------------------------------------
+B) SHARE LINKS WITH CANDIDATES (FREE PUBLIC URL)
+----------------------------------------
+Deploy the backend for FREE on Render.com:
+
+1. Create free account at https://render.com
+2. New → Web Service → connect this project (or upload)
+3. Settings:
+   - Build command:  pip install -r requirements.txt
+   - Start command:  gunicorn backend:app
+4. Deploy → you get a URL like:
+   https://qrs-assessment.onrender.com
+5. Open that URL for Admin
+6. Generated candidate links will look like:
+   https://qrs-assessment.onrender.com/test.html?id=...&token=...
+   These work for ANY candidate on any device.
+
+----------------------------------------
+TROUBLESHOOTING "can't reach this page"
+----------------------------------------
+- Server not running → start with: python backend.py
+- Using localhost on another device → use Render public URL instead
+- Wrong port → use http://localhost:5000 (not 8080) when using backend.py
