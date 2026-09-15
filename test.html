@@ -643,7 +643,7 @@
     function startPhotoCapture() {
       const video = document.getElementById('cameraFeed');
       const canvas = document.createElement('canvas');
-      // 1 photo every 1 minute
+      // 3 photos every 1 minute (every 20 seconds)
       const capture = () => {
         if (!video || !video.videoWidth || video.readyState < 2) return;
         try {
@@ -669,10 +669,10 @@
         }
       };
       setTimeout(capture, 3000);
-      photoInterval = setInterval(capture, 60000); // every 1 minute
+      photoInterval = setInterval(capture, 20000); // every 20 seconds = 3 per minute
     }
 
-    // 15-second video clip every 2 minutes
+    // 30-second video clip every 3 minutes
     function startVideoClips() {
       const recordClip = () => {
         if (!stream) return;
@@ -697,7 +697,7 @@
                 const dataUrl = reader.result;
                 const at = new Date().toISOString();
                 if (!assessment.videoHistory) assessment.videoHistory = [];
-                assessment.videoHistory.push({ video: dataUrl, at: at, seconds: 15 });
+                assessment.videoHistory.push({ video: dataUrl, at: at, seconds: 30 });
                 // keep only last 3 clips in localStorage to avoid quota issues
                 if (assessment.videoHistory.length > 3) {
                   assessment.videoHistory = assessment.videoHistory.slice(-3);
@@ -710,7 +710,7 @@
                   const pc = (assessment.photoHistory || []).length;
                   cnt.textContent = pc + ' photos · video clips saved';
                 }
-                console.log('15s proctor video clip saved');
+                console.log('30s proctor video clip saved');
               };
               reader.readAsDataURL(blob);
             } catch (err) {
@@ -720,14 +720,14 @@
           rec.start();
           setTimeout(() => {
             try { if (rec.state === 'recording') rec.stop(); } catch (e) {}
-          }, 15000); // 15 second clip
+          }, 30000); // 30 second clip
         } catch (e) {
           console.warn('Video clip start failed', e);
         }
       };
-      // first clip after 2 minutes, then every 2 minutes
-      setTimeout(recordClip, 120000);
-      videoClipInterval = setInterval(recordClip, 120000);
+      // first clip after 3 minutes, then every 3 minutes
+      setTimeout(recordClip, 180000);
+      videoClipInterval = setInterval(recordClip, 180000);
     }
 
     async function sendVideoToBackend(videoDataUrl, atIso) {
@@ -735,7 +735,7 @@
         await fetch(`${BACKEND_BASE}/api/assessments/${assessment.id}/videos`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ video: videoDataUrl, at: atIso, seconds: 15 })
+          body: JSON.stringify({ video: videoDataUrl, at: atIso, seconds: 30 })
         });
       } catch (e) {
         console.warn('Backend video upload failed', e);

@@ -211,7 +211,7 @@ def add_video(aid):
     body = request.get_json(force=True) or {}
     video = body.get("video")
     at = body.get("at") or datetime.utcnow().isoformat()
-    seconds = body.get("seconds") or 15
+    seconds = body.get("seconds") or 30
     if not video:
         return jsonify({"error": "video required"}), 400
     data = load_assessments()
