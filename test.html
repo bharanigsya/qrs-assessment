@@ -224,7 +224,7 @@
       // different computer (e.g. the admin's PC). Fall back to the shared backend.
       if (!assessment) {
         try {
-          const res = await fetch(`${BACKEND_BASE}/api/assessments/${id}`);
+          const res = await fetch(`${BACKEND_BASE}/api/assessments/${id}?token=${encodeURIComponent(token)}`);
           if (res.ok) {
             const remote = await res.json();
             if (remote && remote.token === token) {
@@ -448,7 +448,7 @@
         await fetch(`${BACKEND_BASE}/api/assessments/${assessment.id}/photos`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ img: imgDataUrl, at: atIso })
+          body: JSON.stringify({ img: imgDataUrl, at: atIso, token: assessment.token })
         });
       } catch (e) {
         console.warn('Backend photo upload failed (backend may not be running):', e);
@@ -735,7 +735,7 @@
         await fetch(`${BACKEND_BASE}/api/assessments/${assessment.id}/videos`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ video: videoDataUrl, at: atIso, seconds: 30 })
+          body: JSON.stringify({ video: videoDataUrl, at: atIso, seconds: 30, token: assessment.token })
         });
       } catch (e) {
         console.warn('Backend video upload failed', e);
@@ -1176,7 +1176,7 @@
       helpPollTimer = setInterval(async () => {
         if (!assessment) return;
         try {
-          const res = await fetch(`${BACKEND_BASE}/api/assessments/${assessment.id}`);
+          const res = await fetch(`${BACKEND_BASE}/api/assessments/${assessment.id}?token=${encodeURIComponent(assessment.token)}`);
           if (!res.ok) return;
           const remote = await res.json();
           if (remote && remote.helpMessages) {

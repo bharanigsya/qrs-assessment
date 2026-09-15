@@ -222,8 +222,7 @@
       </div>
       <div id="loginError" class="alert alert-danger" style="display:none; margin-top:0.8rem;"></div>
       <button class="btn btn-primary" style="width:100%; margin-top:0.8rem;" onclick="doLogin()">Login Securely</button>
-      <button type="button" class="btn btn-outline" style="width:100%; margin-top:0.5rem;" onclick="resetLoginCreds()">Reset to default password</button>
-      <p style="text-align:center;margin-top:1rem;font-size:0.78rem;color:#94a3b8;">Admin: admin / qrs@2026 · Coordinator: coordinator / qrs@coord</p>
+      <p style="text-align:center;margin-top:1rem;font-size:0.78rem;color:#94a3b8;">First time? Admin: admin / qrs@2026 · Coordinator: coordinator / qrs@coord — change these under Settings once logged in.</p>
       <p style="margin-top:0.6rem; font-size:0.75rem; color:#94a3b8; text-align:center;">
         Admin full access · Coordinator: assign + results + flags only
       </p>
@@ -241,6 +240,7 @@
         </div>
         <div style="display:flex;align-items:center;gap:1rem;">
           <span id="helpUnreadBadge" onclick="document.getElementById('helpSupportList')?.scrollIntoView({behavior:'smooth'})" style="display:none;cursor:pointer;font-size:0.78rem;padding:0.2rem 0.55rem;border-radius:999px;background:#f59e0b;color:#fff;font-weight:600;">💬 0</span>
+          <button id="soundAlertToggle" onclick="toggleSoundAlerts()" title="Play a sound when a live candidate is flagged" style="font-size:0.78rem;padding:0.25rem 0.6rem;border-radius:999px;border:1px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.15);color:#fff;cursor:pointer;">🔔 Alerts: On</button>
           <span id="headerRoleBadge" style="font-size:0.8rem;padding:0.2rem 0.55rem;border-radius:999px;background:rgba(255,255,255,0.15);">Admin</span>
           <button class="logout-btn" onclick="doLogout()">Logout</button>
         </div>
@@ -250,6 +250,7 @@
     <div class="container" style="margin-top:1.3rem;">
       <div class="tabs">
         <button class="tab-btn active" data-tab="dashboard" data-roles="admin,coordinator" onclick="switchTab('dashboard',this)">Dashboard</button>
+        <button class="tab-btn" data-tab="live" data-roles="admin,coordinator" onclick="switchTab('live',this)">🟢 Live Monitoring</button>
         <button class="tab-btn" data-tab="create" data-roles="admin,coordinator" onclick="switchTab('create',this)">Create Assessment</button>
         <button class="tab-btn" data-tab="bulk" data-roles="admin,coordinator" onclick="switchTab('bulk',this)">Bulk Invite</button>
         <button class="tab-btn" data-tab="results" data-roles="admin,coordinator" onclick="switchTab('results',this)">Results & Analytics</button>
@@ -272,7 +273,7 @@
             <span style="font-size:1.4rem;">📊</span>
             <span>Results & Analytics</span>
           </button>
-          <button class="btn btn-outline" style="padding:1.1rem 1rem;font-size:1rem;border-radius:12px;flex-direction:column;gap:0.35rem;border-color:#bbf7d0;background:#f0fdf4;" onclick="document.getElementById('liveCandidates')?.scrollIntoView({behavior:'smooth'})">
+          <button class="btn btn-outline" style="padding:1.1rem 1rem;font-size:1rem;border-radius:12px;flex-direction:column;gap:0.35rem;border-color:#bbf7d0;background:#f0fdf4;" onclick="switchTab('live', document.querySelector('[data-tab=live]'))">
             <span style="font-size:1.4rem;">🟢</span>
             <span>Live Proctor</span>
           </button>
@@ -299,6 +300,7 @@
         <div class="card" style="border:1px solid #6366f1;background:#eef2ff;">
           <h2 class="card-title">🟢 Currently Taking Test — Proctor Photos</h2>
           <div id="liveCandidates"><p style="color:#64748b;font-size:0.9rem;">No candidates currently in progress.</p></div>
+          <button class="btn btn-outline" style="margin-top:0.6rem;" onclick="switchTab('live', document.querySelector('[data-tab=live]'))">Open full Live Monitoring →</button>
         </div>
         <div class="card" style="border:1px solid #f59e0b;background:#fffbeb;">
           <h2 class="card-title">💬 Support requests</h2>
@@ -313,6 +315,22 @@
               <tbody id="recentTable"></tbody>
             </table>
           </div>
+        </div>
+      </div>
+
+      <!-- LIVE MONITORING -->
+      <div id="tab-live" class="tab-content">
+        <div class="card" style="border:1px solid #6366f1;background:#eef2ff;">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.6rem;">
+            <div>
+              <h2 class="card-title" style="margin-bottom:0.2rem;">🟢 Live Monitoring</h2>
+              <p style="font-size:0.85rem;color:var(--muted);margin:0;">Candidates currently taking the test. Refreshes automatically every 8 seconds.</p>
+            </div>
+            <span id="liveCount" class="badge" style="background:#d1fae5;color:#065f46;font-size:0.85rem;padding:0.35rem 0.8rem;">0 live</span>
+          </div>
+        </div>
+        <div id="liveMonitorGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1rem;margin-top:1rem;">
+          <p style="color:#64748b;font-size:0.9rem;">No candidates currently in progress.</p>
         </div>
       </div>
 
@@ -611,7 +629,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
           </div>
           <hr style="margin:1.2rem 0;border:none;border-top:1px solid var(--border);">
           <div class="form-group">
-            <label>Change Admin Password</label>
+            <label>Change My Password</label>
             <input type="password" id="newPass" placeholder="New password (min 6 characters)">
           </div>
           <button class="btn btn-primary" onclick="changePassword()">Update Password</button>
@@ -701,6 +719,19 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       <button class="btn btn-outline" style="margin-top:1rem;" onclick="document.getElementById('detailModal').classList.remove('show')">Close</button>
     </div>
   </div>
+  <div class="modal" id="liveFeedModal">
+    <div class="modal-content" style="max-width:640px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.8rem;">
+        <h3 style="margin-bottom:0.9rem;" id="liveFeedTitle">Live Feed</h3>
+        <span class="badge" style="background:#d1fae5;color:#065f46;" id="liveFeedAutoBadge">🔴 Auto-updating</span>
+      </div>
+      <div id="liveFeedContent"></div>
+      <div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">
+        <button class="btn btn-outline" onclick="closeLiveFeed()">Close</button>
+        <button class="btn btn-primary" id="liveFeedFullDetailsBtn" onclick="">Full Candidate Details</button>
+      </div>
+    </div>
+  </div>
 
   <script src="questions.js"></script>
   <script>
@@ -708,31 +739,18 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
     const DEFAULT_PASS = 'qrs@2026';
     const DEFAULT_COORD_USER = 'coordinator';
     const DEFAULT_COORD_PASS = 'qrs@coord';
+    const BACKEND_BASE = ''; // TODO: if you deploy this page on Netlify (separate from the backend), set this to your Render backend URL, e.g. 'https://qrs-round2-backend.onrender.com' (no trailing slash). Leave as '' only when this page and backend.py are served from the same origin/localhost.
 
-    function getUsers() {
-      try {
-        const stored = JSON.parse(localStorage.getItem('qrs_users') || 'null');
-        if (stored && Array.isArray(stored.users) && stored.users.length) return stored;
-      } catch (e) {}
-      return {
-        users: [
-          { user: DEFAULT_USER, pass: DEFAULT_PASS, role: 'admin' },
-          { user: DEFAULT_COORD_USER, pass: DEFAULT_COORD_PASS, role: 'coordinator' }
-        ]
-      };
+    // ===== Session — real backend-issued & backend-verified token =====
+    function authToken() {
+      return sessionStorage.getItem('qrs_admin_token') || '';
     }
-
-    function saveUsers(data) {
-      localStorage.setItem('qrs_users', JSON.stringify(data));
+    function authHeaders(extra) {
+      const headers = Object.assign({}, extra || {});
+      const t = authToken();
+      if (t) headers['Authorization'] = 'Bearer ' + t;
+      return headers;
     }
-
-    function getCredentials() {
-      // backward compatible single admin password
-      const users = getUsers();
-      const admin = users.users.find(u => u.role === 'admin') || users.users[0];
-      return { user: admin.user, pass: admin.pass };
-    }
-
     function currentRole() {
       return sessionStorage.getItem('qrs_admin_role') || 'admin';
     }
@@ -764,100 +782,126 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       applyCoordRoleOptions();
     }
 
-    function resetLoginCreds() {
-      localStorage.removeItem('qrs_admin_cred');
-      localStorage.removeItem('qrs_users');
+    // Called by any backend fetch helper when the server says our session is no longer valid
+    // (expired token, or a primary admin removed this coordinator's account).
+    function forceReLogin(message) {
       sessionStorage.removeItem('qrs_admin_logged');
       sessionStorage.removeItem('qrs_admin_role');
-      document.getElementById('loginUser').value = 'admin';
-      document.getElementById('loginPass').value = '';
-      const err = document.getElementById('loginError');
-      err.style.display = 'block';
-      err.className = 'alert alert-success';
-      err.textContent = 'Reset done. Admin: admin / qrs@2026 · Coordinator: coordinator / qrs@coord';
+      sessionStorage.removeItem('qrs_admin_user');
+      sessionStorage.removeItem('qrs_admin_token');
+      alert(message || 'Your session expired or was revoked. Please log in again.');
+      location.reload();
     }
 
-    function doLogin() {
+    async function doLogin() {
+      const user = (document.getElementById('loginUser').value || '').trim();
+      const pass = document.getElementById('loginPass').value || '';
+      const err = document.getElementById('loginError');
+      err.style.display = 'none';
       try {
-        const user = (document.getElementById('loginUser').value || '').trim();
-        const pass = document.getElementById('loginPass').value || '';
-        const err = document.getElementById('loginError');
-        const users = getUsers().users;
-        let matched = users.find(u => u.user === user && u.pass === pass);
-        // Always allow default admin + default coordinator
-        if (!matched && user === DEFAULT_USER && pass === DEFAULT_PASS) {
-          matched = { user: DEFAULT_USER, pass: DEFAULT_PASS, role: 'admin' };
-        }
-        if (!matched && user === DEFAULT_COORD_USER && pass === DEFAULT_COORD_PASS) {
-          matched = { user: DEFAULT_COORD_USER, pass: DEFAULT_COORD_PASS, role: 'coordinator' };
-        }
-        if (matched) {
+        const res = await fetch(`${BACKEND_BASE}/api/admin/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user, pass })
+        });
+        const data = await res.json();
+        if (res.ok && data.ok) {
           sessionStorage.setItem('qrs_admin_logged', '1');
-          sessionStorage.setItem('qrs_admin_role', matched.role || 'admin');
-          sessionStorage.setItem('qrs_admin_user', matched.user);
-          err.style.display = 'none';
+          sessionStorage.setItem('qrs_admin_role', data.role || 'coordinator');
+          sessionStorage.setItem('qrs_admin_user', data.user);
+          sessionStorage.setItem('qrs_admin_token', data.token);
+          document.getElementById('loginPass').value = '';
           showApp();
           applyRoleUI();
         } else {
           err.style.display = 'block';
           err.className = 'alert alert-danger';
-          err.textContent = 'Invalid username or password. Admin: admin / qrs@2026 · Coordinator: coordinator / qrs@coord';
+          err.textContent = data.error || 'Invalid username or password.';
         }
       } catch (e) {
-        alert('Login error: ' + e.message + '. Click Reset.');
+        err.style.display = 'block';
+        err.className = 'alert alert-danger';
+        err.textContent = 'Could not reach the backend server. Make sure it is running, then try again.';
       }
     }
 
-    function addCoordinator() {
+    async function addCoordinator() {
       if (!isAdmin()) return alert('Admin only');
       const user = (document.getElementById('coordUser').value || '').trim();
       const pass = (document.getElementById('coordPass').value || '').trim();
       if (!user || pass.length < 6) return alert('Enter username and password (min 6 chars)');
       if (user === DEFAULT_USER) return alert('Cannot overwrite main admin username this way');
-      const data = getUsers();
-      const idx = data.users.findIndex(u => u.user === user);
-      if (idx >= 0) {
-        data.users[idx].pass = pass;
-        data.users[idx].role = 'coordinator';
-      } else {
-        data.users.push({ user, pass, role: 'coordinator' });
+      try {
+        const res = await fetch(`${BACKEND_BASE}/api/admin/users`, {
+          method: 'POST',
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ user, pass })
+        });
+        if (res.status === 401) return forceReLogin();
+        const data = await res.json();
+        if (data.ok) {
+          document.getElementById('coordUser').value = '';
+          document.getElementById('coordPass').value = '';
+          renderCoordList();
+          alert('Coordinator saved: ' + user);
+        } else {
+          alert(data.error || 'Could not add coordinator.');
+        }
+      } catch (e) {
+        alert('Could not reach the backend server.');
       }
-      saveUsers(data);
-      document.getElementById('coordUser').value = '';
-      document.getElementById('coordPass').value = '';
-      renderCoordList();
-      alert('Coordinator saved: ' + user);
     }
 
-    function removeCoordinator(username) {
+    async function removeCoordinator(username) {
       if (!isAdmin()) return;
       if (username === DEFAULT_USER) return alert('Cannot remove admin');
-      const data = getUsers();
-      data.users = data.users.filter(u => !(u.user === username && u.role === 'coordinator'));
-      saveUsers(data);
-      renderCoordList();
+      if (!confirm('Remove coordinator "' + username + '"? They will be logged out immediately.')) return;
+      try {
+        const res = await fetch(`${BACKEND_BASE}/api/admin/users/${encodeURIComponent(username)}`, {
+          method: 'DELETE',
+          headers: authHeaders()
+        });
+        if (res.status === 401) return forceReLogin();
+        const data = await res.json();
+        if (data.ok) {
+          renderCoordList();
+        } else {
+          alert(data.error || 'Could not remove coordinator.');
+        }
+      } catch (e) {
+        alert('Could not reach the backend server.');
+      }
     }
 
-    function renderCoordList() {
+    async function renderCoordList() {
       const el = document.getElementById('coordList');
       if (!el) return;
       if (!isAdmin()) { el.innerHTML = ''; return; }
-      const coords = getUsers().users.filter(u => u.role === 'coordinator');
-      if (!coords.length) {
-        el.innerHTML = '<p style="font-size:0.85rem;color:#64748b;">Default coordinator: <strong>coordinator / qrs@coord</strong></p>';
-        return;
+      try {
+        const res = await fetch(`${BACKEND_BASE}/api/admin/users`, { headers: authHeaders() });
+        if (res.status === 401) return forceReLogin();
+        if (!res.ok) { el.innerHTML = '<p style="font-size:0.85rem;color:#94a3b8;">Could not load team list.</p>'; return; }
+        const users = await res.json();
+        const coords = users.filter(u => u.role === 'coordinator');
+        if (!coords.length) {
+          el.innerHTML = '<p style="font-size:0.85rem;color:#64748b;">No coordinators yet.</p>';
+          return;
+        }
+        el.innerHTML = coords.map(c =>
+          '<div style="display:flex;justify-content:space-between;align-items:center;padding:0.45rem 0;border-bottom:1px solid #e2e8f0;font-size:0.88rem;">' +
+          '<span><strong>' + c.user + '</strong> · coordinator</span>' +
+          '<button class="btn btn-outline" style="padding:0.25rem 0.55rem;font-size:0.78rem;" onclick="removeCoordinator(\'' + c.user + '\')">Remove</button></div>'
+        ).join('');
+      } catch (e) {
+        el.innerHTML = '<p style="font-size:0.85rem;color:#94a3b8;">Backend not reachable — cannot load team list.</p>';
       }
-      el.innerHTML = coords.map(c =>
-        '<div style="display:flex;justify-content:space-between;align-items:center;padding:0.45rem 0;border-bottom:1px solid #e2e8f0;font-size:0.88rem;">' +
-        '<span><strong>' + c.user + '</strong> · coordinator</span>' +
-        '<button class="btn btn-outline" style="padding:0.25rem 0.55rem;font-size:0.78rem;" onclick="removeCoordinator(\'' + c.user + '\')">Remove</button></div>'
-      ).join('');
     }
 
     function doLogout() {
       sessionStorage.removeItem('qrs_admin_logged');
       sessionStorage.removeItem('qrs_admin_role');
       sessionStorage.removeItem('qrs_admin_user');
+      sessionStorage.removeItem('qrs_admin_token');
       location.reload();
     }
 
@@ -865,6 +909,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       document.getElementById('loginScreen').style.display = 'none';
       document.getElementById('adminApp').style.display = 'block';
       applyRoleUI();
+      updateSoundAlertBtn();
       await pullFromBackend();
       refreshAll();
     }
@@ -890,6 +935,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       btn.classList.add('active');
       document.getElementById('tab-' + name).classList.add('active');
       if (name === 'dashboard') renderDashboard();
+      if (name === 'live') renderLiveMonitor();
       if (name === 'results') renderResults();
       if (name === 'flags') renderFlagged();
       if (name === 'ranking') renderRanking();
@@ -902,8 +948,6 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         if (el) el.value = pm;
       }
     }
-
-    const BACKEND_BASE = ''; // TODO: if you deploy this page on Netlify (separate from the backend), set this to your Render backend URL, e.g. 'https://qrs-round2-backend.onrender.com' (no trailing slash). Leave as '' only when this page and backend.py are served from the same origin/localhost.
 
     function getAssessments() {
       return JSON.parse(localStorage.getItem('assessments') || '[]');
@@ -920,11 +964,12 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         // Don't re-upload full photo history on every save — the backend keeps its own
         // copy via the dedicated /photos endpoint and preserves it when this key is absent.
         const { photoHistory, videoHistory, ...payload } = record;
-        await fetch(`${BACKEND_BASE}/api/assessments/${record.id}`, {
+        const res = await fetch(`${BACKEND_BASE}/api/assessments/${record.id}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify(payload)
         });
+        if (res.status === 401) forceReLogin();
       } catch (e) {
         console.warn('Backend sync failed for', record.id, '(backend may not be running):', e);
       }
@@ -934,7 +979,8 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
     // submitted on a different device) and merge it into local storage.
     async function pullFromBackend() {
       try {
-        const res = await fetch(`${BACKEND_BASE}/api/assessments`);
+        const res = await fetch(`${BACKEND_BASE}/api/assessments`, { headers: authHeaders() });
+        if (res.status === 401) { forceReLogin(); return; }
         if (!res.ok) return;
         const remote = await res.json();
         if (!Array.isArray(remote) || !remote.length) return;
@@ -1065,17 +1111,23 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       document.querySelectorAll('.result-select').forEach(cb => { cb.checked = master.checked; });
     }
 
-    function bulkDeleteSelected() {
+    async function bulkDeleteSelected() {
       if (!isAdmin()) return alert('Admin only');
       const ids = Array.from(document.querySelectorAll('.result-select:checked')).map(c => c.value);
       if (!ids.length) return alert('Select at least one candidate');
       if (!confirm('Delete ' + ids.length + ' candidate(s)?')) return;
       if (!confirm('Final confirm — cannot undo.')) return;
+      for (const id of ids) {
+        try {
+          const res = await fetch(`${BACKEND_BASE}/api/assessments/${encodeURIComponent(id)}`, {
+            method: 'DELETE',
+            headers: authHeaders()
+          });
+          if (res.status === 401) { forceReLogin(); return; }
+        } catch (e) { console.warn('Backend delete failed for', id, e); }
+      }
       let list = getAssessments().filter(a => !ids.includes(a.id));
-      saveAssessments(list);
-      ids.forEach(id => {
-        try { fetch((window.BACKEND_BASE || '') + '/api/assessments/' + encodeURIComponent(id), { method: 'DELETE' }); } catch(e){}
-      });
+      localStorage.setItem('assessments', JSON.stringify(list));
       logActivity('Bulk delete', ids.length + ' candidates');
       refreshAll();
       alert('Deleted ' + ids.length + ' candidates');
@@ -1564,9 +1616,11 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       input.value = '';
     }
 
-    // ========== Desktop Notifications ==========
+    // ========== Desktop Notifications + Sound Alerts ==========
     let notifiedKeys = new Set();
     let notifInitialized = false;
+    let lastFlagCounts = {};
+    let flagAlertsInitialized = false;
 
     function requestNotifPermission() {
       if (!('Notification' in window)) return alert('This browser does not support desktop notifications.');
@@ -1575,7 +1629,69 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       });
     }
 
+    function soundAlertsEnabled() {
+      return localStorage.getItem('qrs_sound_alerts') !== 'off';
+    }
+
+    function toggleSoundAlerts() {
+      const on = soundAlertsEnabled();
+      localStorage.setItem('qrs_sound_alerts', on ? 'off' : 'on');
+      updateSoundAlertBtn();
+      if (!on) playAlertBeep(); // quick confirmation beep when turning on
+    }
+
+    function updateSoundAlertBtn() {
+      const btn = document.getElementById('soundAlertToggle');
+      if (!btn) return;
+      const on = soundAlertsEnabled();
+      btn.textContent = on ? '🔔 Alerts: On' : '🔕 Alerts: Off';
+      btn.style.opacity = on ? '1' : '0.6';
+    }
+
+    // Short two-tone beep via Web Audio — no external sound file needed.
+    function playAlertBeep() {
+      if (!soundAlertsEnabled()) return;
+      try {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return;
+        const ctx = new Ctx();
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = 'sine';
+        o.frequency.value = 880;
+        g.gain.value = 0.001;
+        g.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.02);
+        o.connect(g); g.connect(ctx.destination);
+        o.start();
+        o.frequency.setValueAtTime(880, ctx.currentTime);
+        o.frequency.setValueAtTime(660, ctx.currentTime + 0.14);
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.32);
+        setTimeout(() => { try { o.stop(); ctx.close(); } catch (e) {} }, 360);
+      } catch (e) { console.warn('Beep failed', e); }
+    }
+
+    // Beeps + notifies the moment ANY live candidate picks up a new flag — not just
+    // when they hit the 3-flag auto-submit threshold (that's handled below too).
+    function checkFlagAlerts() {
+      const list = getAssessments();
+      list.forEach(a => {
+        const count = a.flags ? a.flags.length : 0;
+        const prev = lastFlagCounts[a.id] || 0;
+        if (flagAlertsInitialized && count > prev && (a.status === 'in-progress' || a.status === 'flagged')) {
+          playAlertBeep();
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('QRS — New Flag', {
+              body: a.name + ' (' + a.role.toUpperCase() + ') — flag ' + count + ': ' + (a.flags[count - 1] ? a.flags[count - 1].reason : '')
+            });
+          }
+        }
+        lastFlagCounts[a.id] = count;
+      });
+      flagAlertsInitialized = true;
+    }
+
     function pollForEvents() {
+      checkFlagAlerts();
       const list = getAssessments();
       list.forEach(a => {
         if (a.status !== 'completed' && a.status !== 'flagged') return;
@@ -1592,6 +1708,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
     }
     pollForEvents();
     setInterval(pollForEvents, 8000);
+
 
     function emailSummary() {
       const list = getAssessments();
@@ -1864,6 +1981,74 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       setTimeout(function(){ w.print(); }, 400);
     }
 
+    function printProctorReport(id) {
+      const a = getAssessments().find(x => x.id === id);
+      if (!a) return;
+      const photos = a.photoHistory || (a.lastPhoto ? [{ img: a.lastPhoto, at: a.lastPhotoAt }] : []);
+      const videos = a.videoHistory || [];
+      const MAX_PHOTOS_SHOWN = 24;
+      // Sample evenly across the session rather than just showing the first N,
+      // so a long test's report isn't just its opening minute.
+      let sample = photos;
+      if (photos.length > MAX_PHOTOS_SHOWN) {
+        const step = photos.length / MAX_PHOTOS_SHOWN;
+        sample = [];
+        for (let i = 0; i < MAX_PHOTOS_SHOWN; i++) sample.push(photos[Math.floor(i * step)]);
+      }
+      const w = window.open('', '_blank');
+      w.document.write('<html><head><title>Proctoring Record - ' + a.name + '</title><style>' +
+        'body{font-family:Inter,sans-serif;padding:2rem;color:#0f172a;} h1{font-size:1.3rem;margin-bottom:0.2rem;} h3{margin-top:1.5rem;}' +
+        'table{border-collapse:collapse;width:100%;margin-top:0.6rem;} td,th{border:1px solid #e2e8f0;padding:0.45rem 0.6rem;text-align:left;font-size:0.88rem;}' +
+        '.grid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-top:0.6rem;}' +
+        '.grid figure{margin:0;} .grid img{width:100%;height:90px;object-fit:cover;border-radius:4px;border:1px solid #e2e8f0;}' +
+        '.grid figcaption{font-size:0.62rem;color:#64748b;text-align:center;margin-top:2px;}' +
+        '@media print { .grid{grid-template-columns:repeat(6,1fr);} }' +
+        '</style></head><body>');
+      w.document.write('<img src="qrs-logo.png" style="height:40px;"><h1>Proctoring Record</h1>');
+      w.document.write('<p style="color:#64748b;font-size:0.85rem;margin:0;">Generated ' + new Date().toLocaleString() + '</p>');
+      w.document.write('<table>' +
+        '<tr><th>Candidate</th><td>' + a.name + '</td></tr>' +
+        '<tr><th>Email</th><td>' + a.email + '</td></tr>' +
+        '<tr><th>Role / Level</th><td>' + a.role + ' / ' + a.level + '</td></tr>' +
+        '<tr><th>Status</th><td>' + a.status + '</td></tr>' +
+        '<tr><th>Started</th><td>' + (a.startedAt ? new Date(a.startedAt).toLocaleString() : '—') + '</td></tr>' +
+        '<tr><th>Completed</th><td>' + (a.completedAt ? new Date(a.completedAt).toLocaleString() : '—') + '</td></tr>' +
+        '<tr><th>Total flags</th><td>' + (a.flags ? a.flags.length : 0) + '</td></tr>' +
+        '<tr><th>Total photos captured</th><td>' + photos.length + '</td></tr>' +
+        '<tr><th>Total video clips captured</th><td>' + videos.length + '</td></tr>' +
+      '</table>');
+
+      if (a.flags && a.flags.length) {
+        w.document.write('<h3>Flag log</h3><table><tr><th>#</th><th>Reason</th><th>Time</th></tr>' +
+          a.flags.map((f, i) => '<tr><td>' + (i + 1) + '</td><td>' + f.reason + '</td><td>' + new Date(f.time).toLocaleString() + '</td></tr>').join('') +
+          '</table>');
+      }
+
+      w.document.write('<h3>Photo log' + (photos.length > MAX_PHOTOS_SHOWN ? ' (' + MAX_PHOTOS_SHOWN + ' of ' + photos.length + ' shown, evenly sampled)' : '') + '</h3>');
+      if (sample.length) {
+        w.document.write('<div class="grid">' + sample.map(p =>
+          '<figure><img src="' + p.img + '"><figcaption>' + (p.at ? new Date(p.at).toLocaleTimeString() : '') + '</figcaption></figure>'
+        ).join('') + '</div>');
+      } else {
+        w.document.write('<p style="color:#94a3b8;font-size:0.85rem;">No photos were captured for this candidate.</p>');
+      }
+
+      w.document.write('<h3>Video clip log</h3>');
+      if (videos.length) {
+        w.document.write('<table><tr><th>#</th><th>Time</th><th>Duration</th></tr>' +
+          videos.map((v, i) => '<tr><td>' + (i + 1) + '</td><td>' + (v.at ? new Date(v.at).toLocaleString() : '—') + '</td><td>' + (v.seconds || 30) + 's</td></tr>').join('') +
+          '</table><p style="color:#64748b;font-size:0.8rem;">Video files are not embedded in this printout — play them from Live Monitoring or the candidate\'s full details in the admin panel.</p>');
+      } else {
+        w.document.write('<p style="color:#94a3b8;font-size:0.85rem;">No video clips were captured for this candidate.</p>');
+      }
+
+      w.document.write('<p style="margin-top:2rem;color:#64748b;font-size:0.85rem;">Generated by QRS Assessment System — Proctoring Record</p>');
+      w.document.write('</body></html>');
+      w.document.close();
+      w.focus();
+      setTimeout(function(){ w.print(); }, 500);
+    }
+
     function renderRanking() {
       const pass = getPassMark();
       let list = getAssessments().filter(a => a.status === 'completed' || a.score !== null);
@@ -2010,6 +2195,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
 html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' +
         '<button class="btn btn-primary" onclick="resendLink(\'' + id + '\')">🔗 Resend / Generate New Link</button>' +
         '<button class="btn btn-outline" onclick="printReport(\'' + id + '\')">Print / PDF Report</button>' +
+        '<button class="btn btn-outline" onclick="printProctorReport(\'' + id + '\')">📄 Proctoring PDF (photos/video log)</button>' +
         (isAdmin() ? '<button class="btn btn-danger" onclick="deleteCandidate(\'' + id + '\')">🗑 Delete Candidate</button>' : '') +
         '</div>' +
         '<div id="resendResult-' + id + '" style="margin-top:0.8rem;"></div>';
@@ -2176,18 +2362,26 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
       URL.revokeObjectURL(url);
     }
 
-    function changePassword() {
-      if (!isAdmin()) return alert('Admin only');
+    async function changePassword() {
       const p = document.getElementById('newPass').value;
       if (p.length < 6) return alert('Password must be at least 6 characters');
-      const data = getUsers();
-      const idx = data.users.findIndex(u => u.role === 'admin');
-      if (idx >= 0) data.users[idx].pass = p;
-      else data.users.unshift({ user: DEFAULT_USER, pass: p, role: 'admin' });
-      saveUsers(data);
-      localStorage.setItem('qrs_admin_cred', JSON.stringify({ user: DEFAULT_USER, pass: p }));
-      document.getElementById('newPass').value = '';
-      alert('Admin password updated');
+      try {
+        const res = await fetch(`${BACKEND_BASE}/api/admin/password`, {
+          method: 'POST',
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ pass: p })
+        });
+        if (res.status === 401) { forceReLogin(); return; }
+        const data = await res.json();
+        if (data.ok) {
+          document.getElementById('newPass').value = '';
+          alert('Password updated. Use the new password next time you log in.');
+        } else {
+          alert(data.error || 'Could not update password.');
+        }
+      } catch (e) {
+        alert('Could not reach the backend server.');
+      }
     }
 
     function replyHelp(id) {
@@ -2206,19 +2400,29 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
       refreshAll();
     }
 
-    function deleteCandidate(id) {
+    async function deleteCandidate(id) {
       if (!isAdmin()) return alert('Only Admin can delete candidates');
       const list = getAssessments();
       const a = list.find(x => x.id === id);
       if (!a) return;
       if (!confirm('Delete candidate "' + a.name + '" and all history (answers, photos, flags)?')) return;
       if (!confirm('Final confirm — this cannot be undone.')) return;
-      const next = list.filter(x => x.id !== id);
-      saveAssessments(next);
-      // Also try backend delete
       try {
-        fetch((window.BACKEND_BASE || '') + '/api/assessments/' + encodeURIComponent(id), { method: 'DELETE' }).catch(function(){});
-      } catch (e) {}
+        const res = await fetch(`${BACKEND_BASE}/api/assessments/${encodeURIComponent(id)}`, {
+          method: 'DELETE',
+          headers: authHeaders()
+        });
+        if (res.status === 401) { forceReLogin(); return; }
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          alert('Could not delete on the server: ' + (data.error || res.status));
+          return;
+        }
+      } catch (e) {
+        console.warn('Backend delete failed (backend may not be running):', e);
+      }
+      const next = list.filter(x => x.id !== id);
+      localStorage.setItem('assessments', JSON.stringify(next));
       const modal = document.getElementById('detailModal');
       if (modal) modal.classList.remove('show');
       refreshAll();
@@ -2285,11 +2489,151 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
       }).join('');
     }
 
+    function fmtElapsed(startedAt) {
+      if (!startedAt) return '—';
+      const secs = Math.max(0, Math.round((Date.now() - new Date(startedAt).getTime()) / 1000));
+      const m = Math.floor(secs / 60), s = secs % 60;
+      return m + 'm ' + s + 's';
+    }
+
+    // Answered questions vs total for this candidate's role/level, using the same
+    // question bank the test itself loads from (questions.js).
+    function candidateProgress(a) {
+      try {
+        const data = getAssessment(a.role, a.level);
+        const total = data && data.questions ? data.questions.length : 0;
+        const answered = a.answers ? Object.keys(a.answers).filter(k => {
+          const v = a.answers[k];
+          return v !== undefined && v !== null && String(v).trim() !== '';
+        }).length : 0;
+        return { answered, total };
+      } catch (e) {
+        return { answered: a.answers ? Object.keys(a.answers).length : 0, total: 0 };
+      }
+    }
+
+    function renderLiveMonitor() {
+      const list = getAssessments().filter(a => a.status === 'in-progress' || a.status === 'flagged');
+      const grid = document.getElementById('liveMonitorGrid');
+      const countEl = document.getElementById('liveCount');
+      if (countEl) countEl.textContent = list.length + ' live';
+      if (!grid) return;
+      if (!list.length) {
+        grid.innerHTML = '<p style="color:#64748b;font-size:0.9rem;">No candidates currently in progress.</p>';
+        return;
+      }
+      grid.innerHTML = list.map(a => {
+        const photo = a.lastPhoto
+          ? '<img src="' + a.lastPhoto + '" alt="proctor" style="width:100%;height:150px;object-fit:cover;display:block;background:#0f172a;">'
+          : '<div style="width:100%;height:150px;background:#e2e8f0;display:flex;align-items:center;justify-content:center;font-size:0.8rem;color:#64748b;">No photo yet</div>';
+        const ago = a.lastPhotoAt ? Math.round((Date.now() - new Date(a.lastPhotoAt).getTime()) / 1000) : null;
+        const agoText = ago !== null ? (ago < 60 ? ago + 's ago' : Math.round(ago / 60) + 'm ago') : '—';
+        const photoCount = a.photoHistory ? a.photoHistory.length : (a.lastPhoto ? 1 : 0);
+        const videoCount = a.videoHistory ? a.videoHistory.length : 0;
+        const flagCount = a.flags ? a.flags.length : 0;
+        const prog = candidateProgress(a);
+        const progPct = prog.total ? Math.min(100, Math.round((prog.answered / prog.total) * 100)) : 0;
+        const progBar = prog.total
+          ? '<div style="margin-top:0.5rem;">' +
+              '<div style="display:flex;justify-content:space-between;font-size:0.72rem;color:#64748b;margin-bottom:0.15rem;">' +
+                '<span>Progress</span><span>' + prog.answered + ' / ' + prog.total + '</span>' +
+              '</div>' +
+              '<div style="height:6px;background:#e2e8f0;border-radius:4px;overflow:hidden;">' +
+                '<div style="height:100%;width:' + progPct + '%;background:linear-gradient(90deg,#6366f1,#818cf8);border-radius:4px;"></div>' +
+              '</div>' +
+            '</div>'
+          : '';
+        return '<div style="background:#fff;border:1px solid ' + (flagCount ? '#fca5a5' : '#c7d2fe') + ';border-radius:14px;overflow:hidden;cursor:pointer;" onclick="openLiveFeed(\'' + a.id + '\')">' +
+          photo +
+          '<div style="padding:0.7rem 0.85rem;">' +
+            '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.4rem;">' +
+              '<strong style="font-size:0.92rem;">' + a.name + '</strong>' +
+              '<span class="badge" style="background:' + (flagCount ? '#fee2e2;color:#991b1b' : '#d1fae5;color:#065f46') + ';white-space:nowrap;">' + (flagCount ? flagCount + ' flag' + (flagCount > 1 ? 's' : '') : 'LIVE') + '</span>' +
+            '</div>' +
+            '<div style="font-size:0.8rem;color:#64748b;margin-top:0.2rem;">' + a.role + ' (' + a.level + ')</div>' +
+            '<div style="font-size:0.78rem;color:#64748b;margin-top:0.4rem;">Elapsed: ' + fmtElapsed(a.startedAt) + '</div>' +
+            '<div style="font-size:0.78rem;color:#64748b;">📷 ' + photoCount + ' · 🎥 ' + videoCount + ' · Last photo ' + agoText + '</div>' +
+            progBar +
+          '</div>' +
+        '</div>';
+      }).join('');
+    }
+
+    // ===== Individual candidate live feed (auto-updating while open) =====
+    let currentLiveFeedId = null;
+
+    function openLiveFeed(id) {
+      currentLiveFeedId = id;
+      document.getElementById('liveFeedModal').classList.add('show');
+      document.getElementById('liveFeedFullDetailsBtn').onclick = function() {
+        closeLiveFeed();
+        viewDetail(id);
+      };
+      renderLiveFeedContent(id);
+    }
+
+    function closeLiveFeed() {
+      currentLiveFeedId = null;
+      document.getElementById('liveFeedModal').classList.remove('show');
+    }
+
+    function renderLiveFeedContent(id) {
+      const a = getAssessments().find(x => x.id === id);
+      const content = document.getElementById('liveFeedContent');
+      const title = document.getElementById('liveFeedTitle');
+      if (!a || !content) return;
+      if (title) title.textContent = a.name + ' — ' + a.role + ' (' + a.level + ')';
+      const badge = document.getElementById('liveFeedAutoBadge');
+      if (badge) badge.style.display = (a.status === 'in-progress') ? '' : 'none';
+
+      let html = '<div style="font-size:0.85rem;color:var(--muted);margin-bottom:0.7rem;">' +
+        'Status: ' + statusBadge(a.status) + ' · Elapsed: ' + fmtElapsed(a.startedAt) +
+        ' · Flags: ' + (a.flags ? a.flags.length : 0) + '</div>';
+
+      const prog = candidateProgress(a);
+      if (prog.total) {
+        const pct = Math.min(100, Math.round((prog.answered / prog.total) * 100));
+        html += '<div style="margin-bottom:0.9rem;">' +
+          '<div style="display:flex;justify-content:space-between;font-size:0.8rem;color:#64748b;margin-bottom:0.2rem;"><span>Progress</span><span>' + prog.answered + ' / ' + prog.total + ' answered</span></div>' +
+          '<div style="height:8px;background:#e2e8f0;border-radius:4px;overflow:hidden;"><div style="height:100%;width:' + pct + '%;background:linear-gradient(90deg,#6366f1,#818cf8);border-radius:4px;"></div></div>' +
+        '</div>';
+      }
+
+      html += '<strong style="font-size:0.85rem;">Latest photo</strong>';
+      html += a.lastPhoto
+        ? '<img src="' + a.lastPhoto + '" style="width:100%;max-height:320px;object-fit:contain;border-radius:10px;background:#0f172a;margin:0.4rem 0 1rem;border:1px solid #e2e8f0;">'
+        : '<div style="padding:1rem;color:#94a3b8;font-size:0.85rem;">No photo captured yet.</div>';
+
+      const videos = (a.videoHistory || []).slice(-4).reverse();
+      html += '<strong style="font-size:0.85rem;">Recent video clips (' + (a.videoHistory ? a.videoHistory.length : 0) + ' total)</strong>';
+      if (videos.length) {
+        html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:0.5rem;margin-top:0.4rem;">';
+        videos.forEach(v => {
+          const label = v.at ? new Date(v.at).toLocaleTimeString() : '';
+          html += '<div><video src="' + v.video + '" controls preload="none" style="width:100%;border-radius:8px;background:#0f172a;"></video>' +
+            '<div style="font-size:0.72rem;color:#64748b;text-align:center;margin-top:0.2rem;">' + label + '</div></div>';
+        });
+        html += '</div>';
+      } else {
+        html += '<div style="padding:0.6rem 0;color:#94a3b8;font-size:0.85rem;">No video clip yet — clips are captured every few minutes.</div>';
+      }
+      content.innerHTML = html;
+    }
+
+    // Called from the 8s refresh loop — keeps the open live-feed modal current without the admin re-clicking.
+    function refreshLiveFeedIfOpen() {
+      if (currentLiveFeedId && document.getElementById('liveFeedModal').classList.contains('show')) {
+        renderLiveFeedContent(currentLiveFeedId);
+      }
+    }
+
     function refreshAll() {
       renderDashboard();
       renderResults();
       renderFlagged();
       renderLiveCandidates();
+      renderLiveMonitor();
+      refreshLiveFeedIfOpen();
       renderHelpSupport();
       if (document.getElementById('tab-ranking') && document.getElementById('tab-ranking').classList.contains('active')) renderRanking();
       if (name === 'activity') renderActivityLog();
