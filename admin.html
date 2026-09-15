@@ -240,6 +240,7 @@
           <span class="logo-badge">SECURE</span>
         </div>
         <div style="display:flex;align-items:center;gap:1rem;">
+          <span id="helpUnreadBadge" onclick="document.getElementById('helpSupportList')?.scrollIntoView({behavior:'smooth'})" style="display:none;cursor:pointer;font-size:0.78rem;padding:0.2rem 0.55rem;border-radius:999px;background:#f59e0b;color:#fff;font-weight:600;">💬 0</span>
           <span id="headerRoleBadge" style="font-size:0.8rem;padding:0.2rem 0.55rem;border-radius:999px;background:rgba(255,255,255,0.15);">Admin</span>
           <button class="logout-btn" onclick="doLogout()">Logout</button>
         </div>
@@ -280,7 +281,16 @@
             <span>Bulk Invite</span>
           </button>
         </div>
+        <div id="backupReminder" class="alert alert-warning" style="display:none;margin-bottom:1rem;"></div>
+        <div style="display:flex;gap:0.6rem;flex-wrap:wrap;margin-bottom:1rem;">
+          <button class="btn btn-outline" onclick="downloadBackup()">⬇ Download Backup JSON</button>
+          <button class="btn btn-outline" onclick="exportCSV()">Export CSV</button>
+        </div>
         <div class="stat-grid" id="statGrid"></div>
+        <div class="card" style="border:1px solid #c7d2fe;background:#eef2ff;margin-bottom:1rem;">
+          <h2 class="card-title">📅 Today&apos;s schedule</h2>
+          <div id="todayScheduleList"><p style="color:#64748b;font-size:0.9rem;">No scheduled tests today.</p></div>
+        </div>
         <div class="chart-row">
           <div class="chart-box"><h3>Assessments by Status</h3><canvas id="statusChart" height="200"></canvas></div>
           <div class="chart-box"><h3>Average Score by Role</h3><canvas id="roleChart" height="200"></canvas></div>
@@ -432,6 +442,13 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
             <label style="display:flex;align-items:center;gap:0.35rem;font-size:0.85rem;white-space:nowrap;">
               <input type="checkbox" id="filterToday" onchange="renderResults()"> Submitted today
             </label>
+            <select id="filterTag" onchange="renderResults()">
+              <option value="">All tags</option>
+              <option value="Selected">Selected</option>
+              <option value="Hold">Hold</option>
+              <option value="Rejected">Rejected</option>
+              <option value="__none">No tag</option>
+            </select>
             <input type="text" id="filterSearch" placeholder="Search name / email..." oninput="renderResults()">
             <button class="btn btn-outline" onclick="exportCSV()">Export CSV</button>
             <button class="btn btn-outline" onclick="downloadBackup()">⬇ Backup JSON</button>
@@ -1524,6 +1541,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      if (typeof markBackupDone === "function") markBackupDone();
     }
 
     function restoreBackup(input) {
@@ -1646,12 +1664,87 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
     }
 
 
+
+    function extendLinkOneHour(id) {
+      const list = getAssessments();
+      const idx = list.findIndex(x => x.id === id);
+      if (idx < 0) return;
+      const a = list[idx];
+      const base = a.expiresAt ? new Date(a.expiresAt).getTime() : Date.now();
+      const from = Math.max(base, Date.now());
+      a.expiresAt = new Date(from + 60 * 60 * 1000).toISOString();
+      if (a.status === 'expired') a.status = 'pending';
+      a.statusNote = (a.statusNote ? a.statusNote + ' · ' : '') + 'Extended +1h';
+      saveAssessments(list);
+      if (typeof logActivity === 'function') logActivity('Extended link +1h', a.name);
+      refreshAll();
+      alert('Link extended +1 hour for ' + a.name + '\nNew expiry: ' + new Date(a.expiresAt).toLocaleString());
+    }
+
+    function updateHelpBadge() {
+      const el = document.getElementById('helpUnreadBadge');
+      if (!el) return;
+      const n = getAssessments().filter(a => a.helpUnreadAdmin).length;
+      if (n > 0) {
+        el.style.display = 'inline-block';
+        el.textContent = '💬 ' + n;
+      } else {
+        el.style.display = 'none';
+      }
+    }
+
+    function updateBackupReminder() {
+      const el = document.getElementById('backupReminder');
+      if (!el) return;
+      const key = 'qrs_last_backup_date';
+      const today = new Date().toISOString().slice(0, 10);
+      const last = localStorage.getItem(key) || '';
+      if (last !== today) {
+        el.style.display = 'block';
+        el.innerHTML = '<strong>Backup reminder:</strong> You have not downloaded a backup today. Click Backup JSON in Results or below.';
+      } else {
+        el.style.display = 'none';
+      }
+    }
+
+    function markBackupDone() {
+      localStorage.setItem('qrs_last_backup_date', new Date().toISOString().slice(0, 10));
+      updateBackupReminder();
+    }
+
+    function renderTodaySchedule() {
+      const el = document.getElementById('todayScheduleList');
+      if (!el) return;
+      const start = new Date(); start.setHours(0,0,0,0);
+      const end = new Date(); end.setHours(23,59,59,999);
+      const list = getAssessments().filter(a => {
+        if (!a.scheduledAt) return false;
+        const t = new Date(a.scheduledAt).getTime();
+        return t >= start.getTime() && t <= end.getTime();
+      }).sort((x,y) => new Date(x.scheduledAt) - new Date(y.scheduledAt));
+      if (!list.length) {
+        el.innerHTML = '<p style="color:#64748b;font-size:0.9rem;">No scheduled tests today.</p>';
+        return;
+      }
+      el.innerHTML = list.map(a => {
+        const tm = new Date(a.scheduledAt).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+        const ex = a.expiresAt ? new Date(a.expiresAt).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : '—';
+        return '<div style="display:flex;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;padding:0.5rem 0;border-bottom:1px solid #c7d2fe;font-size:0.88rem;">' +
+          '<div><strong>' + tm + '</strong> · ' + a.name +
+          '<br><small style="color:#64748b;">' + a.role + ' / ' + a.level + ' · status: ' + (a.status || '') + ' · expires ' + ex + '</small></div>' +
+          '<div><button class="btn btn-outline" style="padding:0.25rem 0.5rem;font-size:0.76rem;" onclick="viewDetail(\'' + a.id + '\')">View</button> ' +
+          '<button class="btn btn-outline" style="padding:0.25rem 0.5rem;font-size:0.76rem;" onclick="extendLinkOneHour(\'' + a.id + '\')">+1h</button></div></div>';
+      }).join('');
+    }
+
+
     function renderResults(sortByScore) {
       let list = getAssessments();
       const role = document.getElementById('filterRole').value;
       const status = document.getElementById('filterStatus').value;
       const search = (document.getElementById('filterSearch').value || '').toLowerCase();
       const todayOnly = document.getElementById('filterToday') && document.getElementById('filterToday').checked;
+      const tagFilter = document.getElementById('filterTag') ? document.getElementById('filterTag').value : '';
       if (role) list = list.filter(a => a.role === role);
       if (status) list = list.filter(a => a.status === status);
       if (search) list = list.filter(a => a.name.toLowerCase().includes(search) || a.email.toLowerCase().includes(search));
@@ -1659,6 +1752,8 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         const start = new Date(); start.setHours(0,0,0,0);
         list = list.filter(a => a.completedAt && new Date(a.completedAt) >= start);
       }
+      if (tagFilter === '__none') list = list.filter(a => !a.tag);
+      else if (tagFilter) list = list.filter(a => a.tag === tagFilter);
       if (sortByScore) {
         list = list.slice().sort((a,b) => totalScore(b) - totalScore(a));
       }
@@ -1680,6 +1775,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         '<td>' + (a.startedAt ? new Date(a.startedAt).toLocaleString() : '—') + '</td>' +
         '<td style="white-space:nowrap;"><button class="btn btn-outline" style="padding:0.25rem 0.5rem;font-size:0.76rem;" onclick="viewDetail(\'' + a.id + '\')">View</button>' +
         ' <button class="btn btn-outline" style="padding:0.25rem 0.5rem;font-size:0.76rem;border-color:#fdba74;" onclick="openInlineEdit(\'' + a.id + '\')">Edit</button>' +
+        ' <button class="btn btn-outline" style="padding:0.25rem 0.5rem;font-size:0.76rem;" onclick="extendLinkOneHour(\'' + a.id + '\')" title="Extend link expiry +1 hour">+1h</button>' +
         (a.status === 'in-progress' || a.status === 'flagged' ? ' <button class="btn btn-outline" style="padding:0.25rem 0.5rem;font-size:0.76rem;" onclick="extendTime(\'' + a.id + '\')">+10m</button>' : '') +
         (a.flags && a.flags.length ? ' <button class="btn btn-warning" style="padding:0.25rem 0.5rem;font-size:0.76rem;" onclick="freeCandidate(\'' + a.id + '\')">Free</button>' : '') +
         (a.status !== 'completed' ? ' <button class="btn btn-primary" style="padding:0.25rem 0.5rem;font-size:0.76rem;" onclick="viewDetail(\'' + a.id + '\'); setTimeout(function(){resendLink(\'' + a.id + '\')},200)">Resend</button>' : '') +
@@ -1801,6 +1897,13 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
     function viewDetail(id) {
       const a = getAssessments().find(x => x.id === id);
       if (!a) return;
+      if (a.helpUnreadAdmin) {
+        a.helpUnreadAdmin = false;
+        const list = getAssessments();
+        const i = list.findIndex(x => x.id === id);
+        if (i >= 0) { list[i].helpUnreadAdmin = false; saveAssessments(list); }
+        updateHelpBadge();
+      }
       let html =
         '<div class="detail-row"><span>Candidate</span><strong>' + a.name + '</strong></div>' +
         '<div class="detail-row"><span>Email</span><span>' + a.email + '</span></div>' +
@@ -1847,7 +1950,10 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         html += '<div style="margin-top:0.8rem;"><strong>Flag Reasons:</strong><ul style="margin:0.4rem 0 0 1.2rem;font-size:0.87rem;">' +
           a.flags.map(f => '<li>' + f.reason + ' <small>(' + new Date(f.time).toLocaleString() + ')</small></li>').join('') + '</ul></div>';
       }
-      if (a.lastPhoto || (a.photoHistory && a.photoHistory.length)) {
+      const coordMediaLock = (typeof isCoordinator === 'function' && isCoordinator());
+      if (coordMediaLock) {
+        html += '<div style="margin-top:1rem;padding:0.75rem;background:#fff7ed;border:1px solid #fdba74;border-radius:10px;font-size:0.88rem;">Proctor photos & videos are restricted for Coordinator role. Ask Admin for full media review.</div>';
+      } else if (a.lastPhoto || (a.photoHistory && a.photoHistory.length)) {
         const photos = (a.photoHistory && a.photoHistory.length) ? a.photoHistory : [{ img: a.lastPhoto, at: a.lastPhotoAt }];
         window._proctorPhotos = photos;
         html += '<div style="margin-top:1rem;"><strong>Proctor photos — full session (' + photos.length + ' stored)</strong>';
@@ -1864,7 +1970,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         html += '<div style="margin-top:1rem;color:#64748b;font-size:0.9rem;">No proctor photo captured yet.</div>';
       }
       
-      if (a.videoHistory && a.videoHistory.length) {
+      if (!coordMediaLock && a.videoHistory && a.videoHistory.length) {
         html += '<div style="margin-top:1rem;"><strong>Proctor video clips (' + a.videoHistory.length + ') — 15s every 2 min</strong>';
         html += '<p style="font-size:0.82rem;color:#64748b;margin:0.3rem 0 0.6rem;">Short clips recorded during the test.</p>';
         html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:0.75rem;">';

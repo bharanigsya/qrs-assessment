@@ -276,10 +276,24 @@
         if (Date.now() < scheduledMs) {
           document.getElementById('notYetUI').style.display = 'block';
           const leftMin = Math.max(1, Math.ceil((scheduledMs - Date.now()) / 60000));
+          const unlockAt = new Date(assessment.scheduledAt);
           document.getElementById('notYetMsg').innerHTML =
-            'This test is locked until <strong>' + new Date(assessment.scheduledAt).toLocaleString() + '</strong>.<br>' +
-            'Please wait about <strong>' + leftMin + ' minute(s)</strong>. This page will refresh automatically.';
-          setTimeout(() => location.reload(), 15000);
+            '<div style="font-size:1.05rem;margin-bottom:0.5rem;">Locked until <strong>' + unlockAt.toLocaleString() + '</strong></div>' +
+            '<div id="lockCountdown" style="font-size:1.6rem;font-weight:700;color:#4f46e5;margin:0.5rem 0;">--:--:--</div>' +
+            '<div style="font-size:0.9rem;">Please wait. This page updates automatically and will open when the time starts.</div>';
+          const tick = () => {
+            const left = unlockAt.getTime() - Date.now();
+            const el = document.getElementById('lockCountdown');
+            if (!el) return;
+            if (left <= 0) { location.reload(); return; }
+            const h = Math.floor(left / 3600000);
+            const m = Math.floor((left % 3600000) / 60000);
+            const s = Math.floor((left % 60000) / 1000);
+            el.textContent = String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+          };
+          tick();
+          setInterval(tick, 1000);
+          setTimeout(() => location.reload(), Math.min(15000, Math.max(3000, unlockAt.getTime() - Date.now())));
           return;
         }
       }
