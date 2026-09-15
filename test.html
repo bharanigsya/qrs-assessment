@@ -29,31 +29,50 @@
 
   <!-- Pre-start screen -->
   <div class="container" id="preStart" style="margin-top:2rem; display:none;">
-    <div class="card" style="max-width:600px; margin:0 auto; text-align:center;">
-      <div style="margin-bottom:1rem;">
-        <img src="qrs-logo.png" alt="QRS" style="height:40px;width:auto;background:#fff;border-radius:8px;padding:4px 8px;">
+    <div class="card" style="max-width:640px; margin:0 auto;">
+      <div style="text-align:center;margin-bottom:1.2rem;">
+        <img src="qrs-logo.png" alt="QRS" style="height:44px;width:auto;background:#fff;border-radius:8px;padding:4px 8px;">
+        <h2 style="margin:0.9rem 0 0.25rem;font-size:1.45rem;">Welcome to your Assessment</h2>
+        <p style="color:var(--muted);font-size:0.92rem;margin:0;">Please review the details below before starting</p>
       </div>
-      <h2 style="margin-bottom:1rem;">Welcome to your Assessment</h2>
       <div id="preInfo"></div>
-      <div class="alert alert-warning" style="text-align:left; margin:1.25rem 0;">
-        <strong>Important Rules:</strong>
-        <ul style="margin:0.5rem 0 0 1.2rem; font-size:0.9rem;">
-          <li>Camera must remain ON throughout the test</li>
-          <li>Do not switch tabs, minimize the browser, or open developer tools (3 flags max)</li>
-          <li>Only one person should be visible in frame at all times</li>
-          <li>Copying or pasting text into coding answers is not permitted and will be flagged</li>
-          <li>Coding answers must be at least <strong>50 characters</strong></li>
-          <li>Timer cannot be paused</li>
-          <li>Submit before time ends</li>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin:1.1rem 0;">
+        <div style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:12px;padding:0.85rem 1rem;">
+          <div style="font-size:0.75rem;color:#4338ca;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;">Camera</div>
+          <div style="font-size:0.92rem;margin-top:0.25rem;font-weight:600;">Must stay ON</div>
+        </div>
+        <div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:12px;padding:0.85rem 1rem;">
+          <div style="font-size:0.75rem;color:#b45309;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;">Flags</div>
+          <div style="font-size:0.92rem;margin-top:0.25rem;font-weight:600;">Max 3 warnings</div>
+        </div>
+        <div style="background:#ecfdf5;border:1px solid #6ee7b7;border-radius:12px;padding:0.85rem 1rem;">
+          <div style="font-size:0.75rem;color:#047857;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;">Timer</div>
+          <div style="font-size:0.92rem;margin-top:0.25rem;font-weight:600;">Cannot be paused</div>
+        </div>
+        <div style="background:#fce7f3;border:1px solid #f9a8d4;border-radius:12px;padding:0.85rem 1rem;">
+          <div style="font-size:0.75rem;color:#9d174d;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;">Device</div>
+          <div style="font-size:0.92rem;margin-top:0.25rem;font-weight:600;">Desktop / Laptop</div>
+        </div>
+      </div>
+      <div class="alert alert-warning" style="text-align:left; margin:0.5rem 0 1rem;">
+        <strong>Rules</strong>
+        <ul style="margin:0.45rem 0 0 1.15rem; font-size:0.88rem; line-height:1.55;">
+          <li>Do not switch tabs, minimize browser, or open developer tools</li>
+          <li>Only one person should be visible in the camera</li>
+          <li>Copy / paste in coding answers will be flagged</li>
+          <li>Coding answers need at least <strong>50 characters</strong> (where applicable)</li>
+          <li>Submit before the timer ends</li>
         </ul>
       </div>
       <div id="mobileBlock" class="alert alert-danger" style="display:none; text-align:left;">
-        <strong>Desktop or laptop required.</strong> This proctored assessment needs a webcam and a larger screen and cannot be taken on a mobile phone or tablet. Please reopen this link on a desktop/laptop computer.
+        <strong>Desktop or laptop required.</strong> This proctored assessment needs a webcam and cannot be taken on a mobile phone or tablet.
       </div>
-      <button class="btn btn-primary" id="startBtn" onclick="startTest()" style="padding:0.9rem 2rem; font-size:1.1rem;">
-        🎥 Enable Camera & Start Test
-      </button>
-      <p style="margin-top:1rem; font-size:0.85rem; color:var(--muted);">You will be asked for camera + microphone permission</p>
+      <div style="text-align:center;">
+        <button class="btn btn-primary" id="startBtn" onclick="startTest()" style="padding:0.95rem 2.1rem; font-size:1.08rem;border-radius:12px;">
+          🎥 Enable Camera & Start Test
+        </button>
+        <p style="margin-top:0.85rem; font-size:0.85rem; color:var(--muted);">Camera + microphone permission will be requested</p>
+      </div>
     </div>
   </div>
 
@@ -83,11 +102,12 @@
           <div style="font-size:0.85rem; color:var(--muted);">Time Remaining</div>
           <div class="timer" id="timer">00:00</div>
         </div>
-        <div style="text-align:right;">
+        <div style="text-align:right;flex:1;min-width:200px;">
           <div style="font-size:0.85rem; color:var(--muted);">Question <span id="qNum">1</span> of <span id="qTotal">0</span></div>
-          <div class="progress-bar" style="width:200px; margin:0.4rem 0 0 auto;">
+          <div class="progress-bar" style="width:100%;max-width:240px; margin:0.4rem 0 0.55rem auto;">
             <div class="progress-fill" id="progressFill" style="width:0%"></div>
           </div>
+          <div id="questionDots" style="display:flex;flex-wrap:wrap;gap:0.35rem;justify-content:flex-end;max-width:280px;margin-left:auto;"></div>
         </div>
       </div>
 
@@ -112,11 +132,30 @@
 
   <!-- Completed Screen -->
   <div class="container" id="completedUI" style="display:none; margin-top:2rem;">
-    <div class="card" style="max-width:500px; margin:0 auto; text-align:center;">
+    <div class="card" style="max-width:560px; margin:0 auto; text-align:center;">
       <img src="qrs-logo.png" alt="QRS" style="height:40px;width:auto;background:#fff;border-radius:8px;padding:4px 8px;">
-      <h2 style="color:var(--success);">✅ Assessment Submitted</h2>
-      <p id="scoreDisplay" style="font-size:1.3rem; margin:1rem 0;"></p>
-      <p style="color:var(--muted);">You may now close this window. Results will be reviewed by the team.</p>
+      <h2 style="color:var(--success); margin-top:0.6rem;">✅ Assessment Submitted</h2>
+      <p id="scoreDisplay" style="font-size:1.15rem; margin:1rem 0;"></p>
+      <p style="color:var(--muted); margin-bottom:1.2rem;">Results will be reviewed by the recruitment team. You may close this window when done.</p>
+
+      <div id="feedbackBox" style="text-align:left; background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:1rem 1.1rem;">
+        <label for="candidateFeedback" style="font-weight:600; font-size:0.95rem; display:block; margin-bottom:0.4rem;">
+          Any final note for the recruitment team? <span style="color:#64748b;font-weight:500;">(optional)</span>
+        </label>
+        <p style="font-size:0.82rem; color:#64748b; margin:0 0 0.55rem;">Technical issues, interest in the role, or anything else you want us to know.</p>
+        <textarea id="candidateFeedback" maxlength="500" placeholder="Write a short note (max 500 characters)..."
+          style="width:100%; min-height:100px; border:1.5px solid #e2e8f0; border-radius:10px; padding:0.7rem 0.85rem; font-family:inherit; font-size:0.92rem; resize:vertical;"></textarea>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.55rem; gap:0.6rem; flex-wrap:wrap;">
+          <small id="feedbackCount" style="color:#64748b;">0 / 500</small>
+          <div style="display:flex; gap:0.5rem;">
+            <button type="button" class="btn btn-outline" style="padding:0.45rem 0.9rem; font-size:0.88rem;" onclick="skipFeedback()">Skip</button>
+            <button type="button" class="btn btn-primary" style="padding:0.45rem 0.9rem; font-size:0.88rem;" onclick="submitFeedback()">Send note</button>
+          </div>
+        </div>
+      </div>
+      <div id="feedbackThanks" style="display:none; margin-top:0.9rem;" class="alert alert-success">
+        Thank you — your note was saved.
+      </div>
     </div>
   </div>
 
@@ -208,7 +247,16 @@
 
       if (assessment.status === 'completed') {
         document.getElementById('completedUI').style.display = 'block';
-        document.getElementById('scoreDisplay').textContent = `Score: ${assessment.score} / ${assessment.totalMarks}`;
+        document.getElementById('scoreDisplay').textContent = `Score: ${assessment.score != null ? assessment.score : '—'} / 100`;
+        if (assessment.candidateFeedback) {
+          const box = document.getElementById('feedbackBox');
+          const th = document.getElementById('feedbackThanks');
+          if (box) box.style.display = 'none';
+          if (th) {
+            th.style.display = 'block';
+            th.textContent = 'Your note was already submitted. Thank you.';
+          }
+        }
         return;
       }
 
@@ -251,10 +299,27 @@
 
       document.getElementById('preStart').style.display = 'block';
       document.getElementById('preInfo').innerHTML = `
-        <p><strong>${assessment.name}</strong></p>
-        <p>${assessment.role.toUpperCase()} • <span class="badge badge-${assessment.level}">${assessment.level}</span></p>
-        <p style="margin-top:0.75rem;">Duration: <strong>${effectiveDuration} minutes</strong> | Total Marks: <strong>100</strong></p>
-        <p style="font-size:0.9rem; color:var(--muted);">${questions.length} Questions</p>
+        <div style="text-align:center;padding:0.5rem 0 0.25rem;">
+          <div style="font-size:1.2rem;font-weight:700;">${assessment.name}</div>
+          <div style="margin-top:0.45rem;">
+            <span class="badge badge-${assessment.level}" style="font-size:0.8rem;">${assessment.level}</span>
+            <span style="display:inline-block;margin-left:0.35rem;padding:0.2rem 0.65rem;border-radius:999px;background:#eef2ff;color:#3730a3;font-size:0.8rem;font-weight:600;">${(assessment.role||'').replace('_',' ').toUpperCase()}</span>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.6rem;margin-top:1rem;">
+          <div style="text-align:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:0.7rem 0.4rem;">
+            <div style="font-size:1.15rem;font-weight:700;color:#4f46e5;">${effectiveDuration}</div>
+            <div style="font-size:0.75rem;color:#64748b;">Minutes</div>
+          </div>
+          <div style="text-align:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:0.7rem 0.4rem;">
+            <div style="font-size:1.15rem;font-weight:700;color:#4f46e5;">100</div>
+            <div style="font-size:0.75rem;color:#64748b;">Marks</div>
+          </div>
+          <div style="text-align:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:0.7rem 0.4rem;">
+            <div style="font-size:1.15rem;font-weight:700;color:#4f46e5;">${questions.length}</div>
+            <div style="font-size:0.75rem;color:#64748b;">Questions</div>
+          </div>
+        </div>
       `;
 
       // ===== Mobile / tablet block =====
@@ -307,7 +372,9 @@
       setupProctoring();
       startFaceDetection();
       assessment.photoHistory = assessment.photoHistory || [];
+      assessment.videoHistory = assessment.videoHistory || [];
       startPhotoCapture();
+      startVideoClips();
       startTimer();
       renderQuestion();
     }
@@ -345,7 +412,7 @@
 
     async function syncAssessmentToBackend() {
       try {
-        const { photoHistory, ...payload } = assessment;
+        const { photoHistory, videoHistory, ...payload } = assessment;
         await fetch(`${BACKEND_BASE}/api/assessments/${assessment.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -551,39 +618,109 @@
 
     // ========== Periodic photo for admin proctoring (Option B) ==========
     let photoInterval = null;
+    let videoClipInterval = null;
+    let activeClipRecorder = null;
+
     function startPhotoCapture() {
       const video = document.getElementById('cameraFeed');
       const canvas = document.createElement('canvas');
-      // Capture immediately once video is ready, then every 30s
+      // 1 photo every 1 minute
       const capture = () => {
         if (!video || !video.videoWidth || video.readyState < 2) return;
         try {
-          // Full native camera resolution, near-lossless quality (no downscaling/compression)
           const w = video.videoWidth;
           const h = video.videoHeight;
           canvas.width = w;
           canvas.height = h;
           const ctx = canvas.getContext('2d');
           ctx.drawImage(video, 0, 0, w, h);
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
           assessment.lastPhoto = dataUrl;
           assessment.lastPhotoAt = new Date().toISOString();
           if (!assessment.photoHistory) assessment.photoHistory = [];
           assessment.photoHistory.push({ img: dataUrl, at: assessment.lastPhotoAt });
-          // Keep all photos from start to end (for review)
           saveAssessment();
-          // Always also send to backend (full-resolution copy, safe from localStorage limits)
           sendPhotoToBackend(dataUrl, assessment.lastPhotoAt);
           const cnt = document.getElementById('photoCountHint');
-          if (cnt) cnt.textContent = assessment.photoHistory.length + ' photos stored';
+          const vcount = (assessment.videoHistory || []).length;
+          if (cnt) cnt.textContent = assessment.photoHistory.length + ' photos · ' + vcount + ' video clips';
           console.log('Proctor photo captured');
         } catch (e) {
           console.warn('Photo capture failed', e);
         }
       };
-      // First capture after short delay
       setTimeout(capture, 3000);
-      photoInterval = setInterval(capture, 30000);
+      photoInterval = setInterval(capture, 60000); // every 1 minute
+    }
+
+    // 15-second video clip every 2 minutes
+    function startVideoClips() {
+      const recordClip = () => {
+        if (!stream) return;
+        if (activeClipRecorder && activeClipRecorder.state === 'recording') return;
+        try {
+          const chunks = [];
+          let mime = 'video/webm;codecs=vp8';
+          if (!window.MediaRecorder) {
+            console.warn('MediaRecorder not supported');
+            return;
+          }
+          if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm';
+          const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 250000 });
+          activeClipRecorder = rec;
+          rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+          rec.onstop = async () => {
+            activeClipRecorder = null;
+            try {
+              const blob = new Blob(chunks, { type: mime });
+              const reader = new FileReader();
+              reader.onloadend = async () => {
+                const dataUrl = reader.result;
+                const at = new Date().toISOString();
+                if (!assessment.videoHistory) assessment.videoHistory = [];
+                assessment.videoHistory.push({ video: dataUrl, at: at, seconds: 15 });
+                // keep only last 3 clips in localStorage to avoid quota issues
+                if (assessment.videoHistory.length > 3) {
+                  assessment.videoHistory = assessment.videoHistory.slice(-3);
+                }
+                assessment.lastVideoAt = at;
+                saveAssessment();
+                sendVideoToBackend(dataUrl, at);
+                const cnt = document.getElementById('photoCountHint');
+                if (cnt) {
+                  const pc = (assessment.photoHistory || []).length;
+                  cnt.textContent = pc + ' photos · video clips saved';
+                }
+                console.log('15s proctor video clip saved');
+              };
+              reader.readAsDataURL(blob);
+            } catch (err) {
+              console.warn('Video clip process failed', err);
+            }
+          };
+          rec.start();
+          setTimeout(() => {
+            try { if (rec.state === 'recording') rec.stop(); } catch (e) {}
+          }, 15000); // 15 second clip
+        } catch (e) {
+          console.warn('Video clip start failed', e);
+        }
+      };
+      // first clip after 2 minutes, then every 2 minutes
+      setTimeout(recordClip, 120000);
+      videoClipInterval = setInterval(recordClip, 120000);
+    }
+
+    async function sendVideoToBackend(videoDataUrl, atIso) {
+      try {
+        await fetch(`${BACKEND_BASE}/api/assessments/${assessment.id}/videos`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ video: videoDataUrl, at: atIso, seconds: 15 })
+        });
+      } catch (e) {
+        console.warn('Backend video upload failed', e);
+      }
     }
 
     function addFlag(reason) {
@@ -634,10 +771,47 @@
     }
 
     // ========== Questions ==========
+    function isAnswered(q) {
+      const v = answers[q.id];
+      if (v === undefined || v === null || v === '') return false;
+      if (q.type === 'coding') return String(v).trim().length >= (q.minLength || 50);
+      return true;
+    }
+
+    function renderQuestionDots() {
+      const el = document.getElementById('questionDots');
+      if (!el || !questions.length) return;
+      el.innerHTML = questions.map((q, i) => {
+        const answered = isAnswered(q);
+        const current = i === currentIndex;
+        let bg = answered ? '#10b981' : '#e2e8f0';
+        let border = current ? '2px solid #4f46e5' : '2px solid transparent';
+        let title = 'Q' + (i+1) + (answered ? ' (answered)' : ' (not answered)');
+        return '<button type="button" title="' + title + '" onclick="goToQuestion(' + i + ')" style="width:22px;height:22px;border-radius:50%;border:' + border + ';background:' + bg + ';cursor:pointer;padding:0;"></button>';
+      }).join('');
+    }
+
+    function goToQuestion(i) {
+      if (i < 0 || i >= questions.length) return;
+      // validate current coding before leaving
+      const q = questions[currentIndex];
+      if (q && q.type === 'coding') {
+        const val = answers[q.id] || '';
+        const minLen = q.minLength || 50;
+        if (val.trim().length < minLen && i > currentIndex) {
+          alert('Please write at least ' + minLen + ' characters before moving ahead.');
+          return;
+        }
+      }
+      currentIndex = i;
+      renderQuestion();
+    }
+
     function renderQuestion() {
       const q = questions[currentIndex];
       document.getElementById('qNum').textContent = currentIndex + 1;
       document.getElementById('progressFill').style.width = `${((currentIndex+1)/questions.length)*100}%`;
+      renderQuestionDots();
 
       document.getElementById('prevBtn').disabled = currentIndex === 0;
       if (currentIndex === questions.length - 1) {
@@ -718,12 +892,14 @@
         el.textContent = `${len} / ${minLen} characters ${len >= minLen ? '✓' : '(minimum required)'}`;
         el.className = 'char-count ' + (len >= minLen ? 'ok' : 'bad');
       }
+      renderQuestionDots();
     }
 
     function saveAnswer(qid, value) {
       answers[qid] = value;
       assessment.answers = answers;
       saveAssessment();
+      renderQuestionDots();
     }
 
     function nextQuestion() {
@@ -810,6 +986,8 @@
       clearInterval(timerInterval);
       if (faceCheckInterval) clearInterval(faceCheckInterval);
       if (photoInterval) clearInterval(photoInterval);
+      if (videoClipInterval) clearInterval(videoClipInterval);
+      try { if (activeClipRecorder && activeClipRecorder.state === 'recording') activeClipRecorder.stop(); } catch (e) {}
       if (stream) {
         stream.getTracks().forEach(t => t.stop());
       }
@@ -837,6 +1015,38 @@
         ${flags.length > 0 ? `<br><span style="color:var(--danger);">⚠️ ${flags.length} proctoring flag(s) recorded</span>` : ''}
       `;
     }
+
+    // ========== Optional post-submit feedback ==========
+    document.addEventListener('input', function(e) {
+      if (e.target && e.target.id === 'candidateFeedback') {
+        const n = (e.target.value || '').length;
+        const el = document.getElementById('feedbackCount');
+        if (el) el.textContent = n + ' / 500';
+      }
+    });
+
+    function submitFeedback() {
+      if (!assessment) return;
+      const ta = document.getElementById('candidateFeedback');
+      const text = (ta && ta.value ? ta.value : '').trim();
+      if (!text) {
+        alert('Write a short note, or click Skip.');
+        return;
+      }
+      assessment.candidateFeedback = text.slice(0, 500);
+      assessment.feedbackAt = new Date().toISOString();
+      saveAssessment();
+      const box = document.getElementById('feedbackBox');
+      const th = document.getElementById('feedbackThanks');
+      if (box) box.style.display = 'none';
+      if (th) th.style.display = 'block';
+    }
+
+    function skipFeedback() {
+      const box = document.getElementById('feedbackBox');
+      if (box) box.style.display = 'none';
+    }
+
 
     // Start
     init();

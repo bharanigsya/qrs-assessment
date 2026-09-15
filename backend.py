@@ -161,6 +161,8 @@ def update_assessment(aid):
             for k, v in body.items():
                 if k == "photoHistory" and not v and a.get("photoHistory"):
                     continue
+                if k == "videoHistory" and not v and a.get("videoHistory"):
+                    continue
                 merged[k] = v
             data[i] = merged
             save_assessments(data)
@@ -192,6 +194,41 @@ def add_photo(aid):
             save_assessments(data)
             return jsonify({"ok": True, "count": len(hist)})
     return jsonify({"error": "Not found"}), 404
+
+@app.route("/api/assessments/<aid>", methods=["DELETE"])
+def delete_assessment(aid):
+    data = load_assessments()
+    new_data = [a for a in data if a.get("id") != aid]
+    if len(new_data) == len(data):
+        return jsonify({"error": "Not found"}), 404
+    save_assessments(new_data)
+    return jsonify({"ok": True, "deleted": aid})
+
+
+@app.route("/api/assessments/<aid>/videos", methods=["POST"])
+def add_video(aid):
+    """Append one short proctor video clip."""
+    body = request.get_json(force=True) or {}
+    video = body.get("video")
+    at = body.get("at") or datetime.utcnow().isoformat()
+    seconds = body.get("seconds") or 15
+    if not video:
+        return jsonify({"error": "video required"}), 400
+    data = load_assessments()
+    for i, a in enumerate(data):
+        if a.get("id") == aid:
+            hist = a.get("videoHistory") or []
+            hist.append({"video": video, "at": at, "seconds": seconds})
+            # Cap stored clips to control disk size on free hosts
+            if len(hist) > 20:
+                hist = hist[-20:]
+            a["videoHistory"] = hist
+            a["lastVideoAt"] = at
+            data[i] = a
+            save_assessments(data)
+            return jsonify({"ok": True, "count": len(hist)})
+    return jsonify({"error": "Not found"}), 404
+
 
 if __name__ == "__main__":
     ensure_data()

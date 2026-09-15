@@ -869,7 +869,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       try {
         // Don't re-upload full photo history on every save — the backend keeps its own
         // copy via the dedicated /photos endpoint and preserves it when this key is absent.
-        const { photoHistory, ...payload } = record;
+        const { photoHistory, videoHistory, ...payload } = record;
         await fetch(`${BACKEND_BASE}/api/assessments/${record.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -1760,7 +1760,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         const photos = (a.photoHistory && a.photoHistory.length) ? a.photoHistory : [{ img: a.lastPhoto, at: a.lastPhotoAt }];
         window._proctorPhotos = photos;
         html += '<div style="margin-top:1rem;"><strong>Proctor photos — full session (' + photos.length + ' stored)</strong>';
-        html += '<p style="font-size:0.82rem;color:#64748b;margin:0.3rem 0 0.6rem;">Captured from start until submit (about every 15 seconds). Click any photo for full view.</p>';
+        html += '<p style="font-size:0.82rem;color:#64748b;margin:0.3rem 0 0.6rem;">Captured from start until submit (photo every 1 min · 15s video every 2 min). Click any photo for full view.</p>';
         html += '<div id="proctorPhotoGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:0.6rem;">';
         photos.forEach(function(p, i) {
           const label = p.at ? new Date(p.at).toLocaleTimeString() : ('#' + (i+1));
@@ -1772,7 +1772,21 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       } else {
         html += '<div style="margin-top:1rem;color:#64748b;font-size:0.9rem;">No proctor photo captured yet.</div>';
       }
-      html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' +
+      
+      if (a.videoHistory && a.videoHistory.length) {
+        html += '<div style="margin-top:1rem;"><strong>Proctor video clips (' + a.videoHistory.length + ') — 15s every 2 min</strong>';
+        html += '<p style="font-size:0.82rem;color:#64748b;margin:0.3rem 0 0.6rem;">Short clips recorded during the test.</p>';
+        html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:0.75rem;">';
+        a.videoHistory.forEach(function(v, i) {
+          const label = v.at ? new Date(v.at).toLocaleString() : ('Clip #' + (i+1));
+          html += '<div style="border:1px solid #e2e8f0;border-radius:10px;padding:0.4rem;background:#0f172a;">';
+          html += '<video src="' + v.video + '" controls style="width:100%;border-radius:8px;max-height:180px;"></video>';
+          html += '<small style="color:#94a3b8;">' + label + ' · ' + (v.seconds || 15) + 's</small></div>';
+        });
+        html += '</div></div>';
+      }
+
+html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' +
         '<button class="btn btn-primary" onclick="resendLink(\'' + id + '\')">🔗 Resend / Generate New Link</button>' +
         '<button class="btn btn-outline" onclick="printReport(\'' + id + '\')">Print / PDF Report</button>' +
         (isAdmin() ? '<button class="btn btn-danger" onclick="deleteCandidate(\'' + id + '\')">🗑 Delete Candidate</button>' : '') +
