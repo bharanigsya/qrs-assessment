@@ -273,9 +273,10 @@
         const scheduledMs = new Date(assessment.scheduledAt).getTime();
         if (Date.now() < scheduledMs) {
           document.getElementById('notYetUI').style.display = 'block';
-          document.getElementById('notYetMsg').textContent =
-            'Your assessment is scheduled to start at ' + new Date(assessment.scheduledAt).toLocaleString() + '.';
-          // Auto-recheck every 15s so the candidate doesn't have to refresh manually
+          const leftMin = Math.max(1, Math.ceil((scheduledMs - Date.now()) / 60000));
+          document.getElementById('notYetMsg').innerHTML =
+            'This test is locked until <strong>' + new Date(assessment.scheduledAt).toLocaleString() + '</strong>.<br>' +
+            'Please wait about <strong>' + leftMin + ' minute(s)</strong>. This page will refresh automatically.';
           setTimeout(() => location.reload(), 15000);
           return;
         }
