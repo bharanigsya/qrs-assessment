@@ -422,6 +422,8 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
               <option value="in-progress">In Progress</option>
               <option value="completed">Completed</option>
               <option value="flagged">Flagged</option>
+              <option value="missed">Missed</option>
+              <option value="expired">Link Expired</option>
             </select>
             <label style="display:flex;align-items:center;gap:0.35rem;font-size:0.85rem;white-space:nowrap;">
               <input type="checkbox" id="filterToday" onchange="renderResults()"> Submitted today
@@ -432,6 +434,33 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
             <button class="btn btn-outline" onclick="renderResults(true)">Sort by Score</button>
             <button class="btn btn-outline" onclick="openComparePanel()">Compare 2</button>
             <button class="btn btn-danger" data-admin-only onclick="bulkDeleteSelected()">Delete selected</button>
+          </div>
+          <div id="inlineEditPanel" style="display:none;margin-bottom:1rem;padding:1rem;border:1px solid #fdba74;border-radius:12px;background:#fff7ed;">
+            <strong>Edit candidate status / schedule</strong>
+            <p style="font-size:0.82rem;color:#9a3412;margin:0.35rem 0 0.6rem;">Use when candidate did not attend — set Missed or Link Expired, and adjust date/time.</p>
+            <input type="hidden" id="editCandId">
+            <div class="form-grid">
+              <div class="form-group"><label>Candidate</label><input type="text" id="editCandName" readonly></div>
+              <div class="form-group"><label>Status</label>
+                <select id="editCandStatus">
+                  <option value="pending">Pending</option>
+                  <option value="missed">Missed (did not attend)</option>
+                  <option value="expired">Link Expired</option>
+                  <option value="in-progress">In Progress</option>
+                  <option value="completed">Completed</option>
+                  <option value="flagged">Flagged</option>
+                </select>
+              </div>
+              <div class="form-group"><label>Scheduled start</label><input type="datetime-local" id="editScheduledAt"></div>
+              <div class="form-group"><label>Link expires</label><input type="datetime-local" id="editExpiresAt"></div>
+              <div class="form-group"><label>Note (optional)</label><input type="text" id="editStatusNote" placeholder="e.g. No show / asked to reschedule"></div>
+            </div>
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.5rem;">
+              <button class="btn btn-primary" onclick="saveInlineEdit()">Save changes</button>
+              <button class="btn btn-warning" onclick="quickMarkStatus('missed')">Mark Missed</button>
+              <button class="btn btn-outline" onclick="quickMarkStatus('expired')">Mark Link Expired</button>
+              <button class="btn btn-outline" onclick="document.getElementById('inlineEditPanel').style.display='none'">Close</button>
+            </div>
           </div>
           <div id="comparePanel" style="display:none;margin-bottom:1rem;padding:0.9rem;border:1px solid #c7d2fe;border-radius:12px;background:#eef2ff;">
             <strong>Compare two candidates</strong>
@@ -1270,9 +1299,11 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
     function statusBadge(s) {
       const map = {
         pending: '<span class="badge" style="background:#e2e8f0;color:#475569;">Pending</span>',
-        'in-progress': '<span class="badge" style="background:#fef3c7;color:#92400e;">In Progress</span>',
+        'in-progress': '<span class="badge" style="background:#fef3c7;color:#b45309;">In Progress</span>',
         completed: '<span class="badge" style="background:#d1fae5;color:#065f46;">Completed</span>',
-        flagged: '<span class="badge" style="background:#fee2e2;color:#991b1b;">Flagged</span>'
+        flagged: '<span class="badge" style="background:#fee2e2;color:#991b1b;">Flagged</span>',
+        missed: '<span class="badge" style="background:#ffedd5;color:#c2410c;">Missed</span>',
+        expired: '<span class="badge" style="background:#fce7f3;color:#9d174d;">Link Expired</span>'
       };
       return map[s] || s;
     }
@@ -1556,6 +1587,61 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       window.location.href = 'mailto:?subject=' + subject + '&body=' + encodeURIComponent(body);
     }
 
+
+    function toLocalInputValue(iso) {
+      if (!iso) return '';
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return '';
+      const pad = n => String(n).padStart(2, '0');
+      return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    }
+
+    function openInlineEdit(id) {
+      const a = getAssessments().find(x => x.id === id);
+      if (!a) return;
+      document.getElementById('inlineEditPanel').style.display = 'block';
+      document.getElementById('editCandId').value = a.id;
+      document.getElementById('editCandName').value = a.name + ' · ' + a.email;
+      document.getElementById('editCandStatus').value = a.status || 'pending';
+      document.getElementById('editScheduledAt').value = toLocalInputValue(a.scheduledAt);
+      document.getElementById('editExpiresAt').value = toLocalInputValue(a.expiresAt);
+      document.getElementById('editStatusNote').value = a.statusNote || '';
+      document.getElementById('inlineEditPanel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function saveInlineEdit() {
+      const id = document.getElementById('editCandId').value;
+      const list = getAssessments();
+      const idx = list.findIndex(x => x.id === id);
+      if (idx < 0) return alert('Candidate not found');
+      const st = document.getElementById('editCandStatus').value;
+      list[idx].status = st;
+      const sched = document.getElementById('editScheduledAt').value;
+      const exp = document.getElementById('editExpiresAt').value;
+      list[idx].scheduledAt = sched ? new Date(sched).toISOString() : null;
+      list[idx].expiresAt = exp ? new Date(exp).toISOString() : list[idx].expiresAt;
+      list[idx].statusNote = (document.getElementById('editStatusNote').value || '').trim();
+      list[idx].statusUpdatedAt = new Date().toISOString();
+      list[idx].statusUpdatedBy = sessionStorage.getItem('qrs_admin_user') || 'admin';
+      saveAssessments(list);
+      if (typeof logActivity === 'function') logActivity('Edited status/schedule', list[idx].name + ' → ' + st);
+      document.getElementById('inlineEditPanel').style.display = 'none';
+      refreshAll();
+      alert('Updated: ' + list[idx].name + ' (' + st + ')');
+    }
+
+    function quickMarkStatus(st) {
+      document.getElementById('editCandStatus').value = st;
+      if (st === 'missed' && !document.getElementById('editStatusNote').value) {
+        document.getElementById('editStatusNote').value = 'Candidate did not attend';
+      }
+      if (st === 'expired' && !document.getElementById('editStatusNote').value) {
+        document.getElementById('editStatusNote').value = 'Assessment link expired';
+      }
+      saveInlineEdit();
+    }
+
+
     function renderResults(sortByScore) {
       let list = getAssessments();
       const role = document.getElementById('filterRole').value;
@@ -1578,7 +1664,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         (isAdmin() ? '<td><input type="checkbox" class="result-select" value="' + a.id + '"></td>' : '<td></td>') +
         '<td><strong>' + a.name + '</strong><br><small style="color:#64748b">' + a.email + '</small></td>' +
         '<td>' + a.role + '</td><td><span class="badge badge-' + a.level + '">' + a.level + '</span></td>' +
-        '<td>' + statusBadge(a.status) + '</td><td>' + (a.score !== null ? '<strong>' + a.score + '</strong>/100' : '—') + '</td>' +
+        '<td>' + statusBadge(a.status) + (a.statusNote ? '<br><small style="color:#9a3412;">' + a.statusNote + '</small>' : '') + (a.status === 'expired' && a.expiresAt ? '<br><small style="color:#9d174d;">Exp: ' + new Date(a.expiresAt).toLocaleString() + '</small>' : '') + (a.status === 'missed' ? '<br><small style="color:#c2410c;">Did not attend</small>' : '') + '</td><td>' + (a.score !== null ? '<strong>' + a.score + '</strong>/100' : '—') + '</td>' +
         '<td>' + resultBadge(a) + '</td>' +
         '<td>' + (a.flags && a.flags.length ? '<span class="flag-count">' + a.flags.length + ' 🚩</span>' : '0') + '</td>' +
         '<td><select style="font-size:0.75rem;padding:0.2rem;max-width:100px;" onchange="setCandidateTag(\'' + a.id + '\', this.value)">' +
@@ -1589,6 +1675,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         '</select></td>' +
         '<td>' + (a.startedAt ? new Date(a.startedAt).toLocaleString() : '—') + '</td>' +
         '<td style="white-space:nowrap;"><button class="btn btn-outline" style="padding:0.25rem 0.5rem;font-size:0.76rem;" onclick="viewDetail(\'' + a.id + '\')">View</button>' +
+        ' <button class="btn btn-outline" style="padding:0.25rem 0.5rem;font-size:0.76rem;border-color:#fdba74;" onclick="openInlineEdit(\'' + a.id + '\')">Edit</button>' +
         (a.status === 'in-progress' || a.status === 'flagged' ? ' <button class="btn btn-outline" style="padding:0.25rem 0.5rem;font-size:0.76rem;" onclick="extendTime(\'' + a.id + '\')">+10m</button>' : '') +
         (a.flags && a.flags.length ? ' <button class="btn btn-warning" style="padding:0.25rem 0.5rem;font-size:0.76rem;" onclick="freeCandidate(\'' + a.id + '\')">Free</button>' : '') +
         (a.status !== 'completed' ? ' <button class="btn btn-primary" style="padding:0.25rem 0.5rem;font-size:0.76rem;" onclick="viewDetail(\'' + a.id + '\'); setTimeout(function(){resendLink(\'' + a.id + '\')},200)">Resend</button>' : '') +
@@ -1715,7 +1802,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         '<div class="detail-row"><span>Email</span><span>' + a.email + '</span></div>' +
         '<div class="detail-row"><span>Mobile</span><span>' + (a.mobile || '—') + '</span></div>' +
         '<div class="detail-row"><span>Role / Level</span><span>' + a.role + ' / ' + a.level + '</span></div>' +
-        '<div class="detail-row"><span>Status</span><span>' + a.status + '</span></div>' +
+        '<div class="detail-row"><span>Status</span><span>' + statusBadge(a.status) + (a.statusNote ? ' — ' + a.statusNote : '') + '</span></div>' +
         '<div class="detail-row"><span>MCQ Score</span><strong>' + (a.score !== null ? a.score + ' / 100' : 'Not submitted') + '</strong></div>' +
         '<div class="detail-row"><span>Voice Score</span><strong>' + (a.voiceScore !== undefined ? a.voiceScore : 'Not scored') + '</strong></div>' +
         '<div class="detail-row"><span>Total / Result</span><strong>' + totalScore(a) + ' · ' + (a.score !== null ? (totalScore(a) >= getPassMark() ? 'PASS' : 'FAIL') : '—') + '</strong></div>' +
