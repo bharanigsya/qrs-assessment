@@ -248,6 +248,7 @@
     </header>
 
     <div class="container" style="margin-top:1.3rem;">
+      <div id="dataLossWarning" style="display:none;margin-bottom:1rem;"></div>
       <div class="tabs">
         <button class="tab-btn active" data-tab="dashboard" data-roles="admin,coordinator" onclick="switchTab('dashboard',this)">Dashboard</button>
         <button class="tab-btn" data-tab="live" data-roles="admin,coordinator" onclick="switchTab('live',this)">🟢 Live Monitoring</button>
@@ -996,13 +997,29 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       try {
         const res = await fetch(`${BACKEND_BASE}/api/health`);
         const ms = Date.now() - started;
-        if (res.ok) {
-          if (el) { el.className = 'alert alert-success'; el.textContent = '✅ Backend reachable at "' + (BACKEND_BASE || window.location.origin) + '" (' + ms + 'ms). Candidate links opened on other devices should work.'; }
-          return true;
-        } else {
+        if (!res.ok) {
           if (el) { el.className = 'alert alert-danger'; el.textContent = '⚠️ Backend responded but with an error (HTTP ' + res.status + '). Candidate links on other devices may fail.'; }
           return false;
         }
+        // Health check passed — now check whether the backend's DATA matches what we'd expect,
+        // since a reachable backend can still have lost its stored candidates (e.g. Render free
+        // tier wiping the on-disk data/assessments.json file after a restart).
+        let countMsg = '';
+        try {
+          const listRes = await fetch(`${BACKEND_BASE}/api/assessments`, { headers: authHeaders() });
+          if (listRes.ok) {
+            const remote = await listRes.json();
+            const remoteCount = Array.isArray(remote) ? remote.length : 0;
+            const localCount = getAssessments().length;
+            if (remoteCount === 0 && localCount > 0) {
+              if (el) { el.className = 'alert alert-danger'; el.textContent = '⚠️ Backend is reachable (' + ms + 'ms) BUT has 0 candidate records, while this browser has ' + localCount + ' cached locally. This strongly suggests the backend lost its data (common on Render\'s free tier — the disk isn\'t permanent and can be wiped when the service restarts after sleeping). Candidates whose links/results existed only on the backend, like ones who tested from their own device, may be permanently gone. See the Data Backup section, and consider adding a persistent disk on Render or ask me to move storage to a database.'; }
+              return false;
+            }
+            countMsg = ' Backend currently holds ' + remoteCount + ' candidate record(s)' + (remoteCount !== localCount ? ' (this browser has ' + localCount + ' cached locally — some difference is normal, but a big gap can mean lost data)' : '') + '.';
+          }
+        } catch (e2) { /* count check is best-effort; the health check above already confirmed reachability */ }
+        if (el) { el.className = 'alert alert-success'; el.textContent = '✅ Backend reachable at "' + (BACKEND_BASE || window.location.origin) + '" (' + ms + 'ms).' + countMsg; }
+        return true;
       } catch (e) {
         if (el) { el.className = 'alert alert-danger'; el.textContent = '❌ Could not reach the backend at "' + (BACKEND_BASE || window.location.origin) + '". If admin.html is hosted separately from backend.py, set BACKEND_BASE to your backend\'s URL near the top of the script. Candidates opening their link on another device will see "Invalid or Expired Link" until this is fixed.'; }
         return false;
@@ -1017,8 +1034,20 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         if (res.status === 401) { forceReLogin(); return; }
         if (!res.ok) return;
         const remote = await res.json();
-        if (!Array.isArray(remote) || !remote.length) return;
         const local = getAssessments();
+        const warnEl = document.getElementById('dataLossWarning');
+        // A reachable backend that suddenly reports far fewer candidates than we have cached
+        // locally is the signature of Render's free-tier disk being wiped on restart — surface
+        // it loudly instead of silently keeping the stale local copy, which just looks "stuck".
+        if (Array.isArray(remote) && local.length > 0 && remote.length < local.length * 0.5) {
+          if (warnEl) {
+            warnEl.style.display = 'block';
+            warnEl.innerHTML = '<div class="alert alert-danger">⚠️ <strong>Possible data loss:</strong> the backend now has ' + remote.length + ' candidate record(s), down from ' + local.length + ' this browser had cached. This usually means the backend\'s storage got reset (common on Render\'s free tier after the service sleeps and restarts — its disk isn\'t permanent). Any results/photos/videos that only existed on the backend may be gone. Check Settings → Test Backend Connection for details, and consider adding a persistent disk or moving to a database so this stops happening. <button class="btn btn-outline" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="document.getElementById(\'dataLossWarning\').style.display=\'none\'">Dismiss</button></div>';
+          }
+        } else if (warnEl && Array.isArray(remote) && remote.length >= local.length) {
+          warnEl.style.display = 'none';
+        }
+        if (!Array.isArray(remote) || !remote.length) return;
         const byId = {};
         local.forEach(a => { byId[a.id] = a; });
         remote.forEach(r => { byId[r.id] = r; }); // backend is authoritative once synced
