@@ -290,6 +290,10 @@
           <h2 class="card-title">🟢 Currently Taking Test — Proctor Photos</h2>
           <div id="liveCandidates"><p style="color:#64748b;font-size:0.9rem;">No candidates currently in progress.</p></div>
         </div>
+        <div class="card" style="border:1px solid #f59e0b;background:#fffbeb;">
+          <h2 class="card-title">💬 Support requests</h2>
+          <div id="helpSupportList"><p style="color:#64748b;font-size:0.9rem;">No help messages.</p></div>
+        </div>
 
         <div class="card">
           <h2 class="card-title">Recent Assessments</h2>
@@ -1873,6 +1877,30 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         html += '</div></div>';
       }
 
+
+      // Support chat
+      const msgs = a.helpMessages || [];
+      html += '<div style="margin-top:1rem;padding:0.85rem;border:1px solid #c7d2fe;border-radius:12px;background:#eef2ff;">';
+      html += '<strong>Support chat</strong> (' + msgs.length + ' messages)';
+      if (msgs.length) {
+        html += '<div style="max-height:220px;overflow-y:auto;margin:0.5rem 0;background:#fff;border-radius:8px;padding:0.5rem;">';
+        msgs.forEach(function(m) {
+          html += '<div style="margin-bottom:0.45rem;padding:0.4rem;border-radius:8px;background:' + (m.from === 'admin' ? '#ecfdf5' : '#f8fafc') + ';">';
+          html += '<small style="color:#64748b;">' + (m.from === 'admin' ? 'Admin' : 'Candidate') + ' · ' + new Date(m.at).toLocaleString() + '</small>';
+          html += '<div style="font-size:0.88rem;">' + String(m.text || '').replace(/</g, '&lt;') + '</div>';
+          if (m.photo) {
+            html += '<img src="' + m.photo + '" style="max-width:160px;margin-top:0.3rem;border-radius:6px;" alt="help">';
+          }
+          html += '</div>';
+        });
+        html += '</div>';
+      } else {
+        html += '<p style="font-size:0.85rem;color:#64748b;margin:0.4rem 0;">No help messages yet.</p>';
+      }
+      html += '<textarea id="adminHelpReply" maxlength="500" placeholder="Reply to candidate..." style="width:100%;min-height:60px;border:1px solid #e2e8f0;border-radius:8px;padding:0.45rem;font-family:inherit;font-size:0.88rem;"></textarea>';
+      html += '<button class="btn btn-primary" style="margin-top:0.4rem;padding:0.35rem 0.75rem;font-size:0.85rem;" onclick="replyHelp(\'' + id + '\')">Send reply</button></div>';
+
+
 html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' +
         '<button class="btn btn-primary" onclick="resendLink(\'' + id + '\')">🔗 Resend / Generate New Link</button>' +
         '<button class="btn btn-outline" onclick="printReport(\'' + id + '\')">Print / PDF Report</button>' +
@@ -2056,6 +2084,22 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
       alert('Admin password updated');
     }
 
+    function replyHelp(id) {
+      const text = (document.getElementById('adminHelpReply') && document.getElementById('adminHelpReply').value || '').trim();
+      if (!text) return alert('Write a reply');
+      const list = getAssessments();
+      const idx = list.findIndex(x => x.id === id);
+      if (idx < 0) return;
+      if (!list[idx].helpMessages) list[idx].helpMessages = [];
+      list[idx].helpMessages.push({ from: 'admin', text: text.slice(0,500), at: new Date().toISOString() });
+      list[idx].helpUnreadAdmin = false;
+      list[idx].helpUnreadCandidate = true;
+      saveAssessments(list);
+      if (typeof logActivity === 'function') logActivity('Help reply', list[idx].name);
+      viewDetail(id);
+      refreshAll();
+    }
+
     function deleteCandidate(id) {
       if (!isAdmin()) return alert('Only Admin can delete candidates');
       const list = getAssessments();
@@ -2086,6 +2130,28 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
     }
 
     
+    function renderHelpSupport() {
+      const el = document.getElementById('helpSupportList');
+      if (!el) return;
+      const list = getAssessments().filter(a => (a.helpMessages && a.helpMessages.length) || a.helpUnreadAdmin);
+      if (!list.length) {
+        el.innerHTML = '<p style="color:#64748b;font-size:0.9rem;">No help messages.</p>';
+        return;
+      }
+      el.innerHTML = list.slice().sort((x,y) => {
+        const tx = (x.helpMessages && x.helpMessages.length) ? new Date(x.helpMessages[x.helpMessages.length-1].at).getTime() : 0;
+        const ty = (y.helpMessages && y.helpMessages.length) ? new Date(y.helpMessages[y.helpMessages.length-1].at).getTime() : 0;
+        return ty - tx;
+      }).map(a => {
+        const last = (a.helpMessages && a.helpMessages.length) ? a.helpMessages[a.helpMessages.length-1] : null;
+        const unread = a.helpUnreadAdmin ? ' <span class="badge" style="background:#fef3c7;color:#b45309;">Unread</span>' : '';
+        return '<div style="padding:0.55rem 0;border-bottom:1px solid #fde68a;font-size:0.88rem;">' +
+          '<strong>' + a.name + '</strong>' + unread +
+          '<br><small style="color:#64748b;">' + (last ? (last.from + ': ' + String(last.text||'').slice(0,80)) : '') + '</small> ' +
+          '<button class="btn btn-outline" style="padding:0.2rem 0.45rem;font-size:0.75rem;" onclick="viewDetail(\'' + a.id + '\')">Open chat</button></div>';
+      }).join('');
+    }
+
     function renderLiveCandidates() {
       const list = getAssessments().filter(a => a.status === 'in-progress' || a.status === 'flagged');
       const el = document.getElementById('liveCandidates');
@@ -2118,6 +2184,7 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
       renderResults();
       renderFlagged();
       renderLiveCandidates();
+      renderHelpSupport();
       if (document.getElementById('tab-ranking') && document.getElementById('tab-ranking').classList.contains('active')) renderRanking();
       if (name === 'activity') renderActivityLog();
     }
