@@ -24,12 +24,24 @@ ADMIN_FILE = os.path.join(BASE, "data", "admin.json")
 BACKUP_DIR = os.path.join(BASE, "data", "backups")
 MAX_BACKUPS = 30
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
-# Render sometimes uses postgres:// — psycopg2 wants postgresql://
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = "postgresql://" + DATABASE_URL[len("postgres://"):]
+def _clean_database_url(raw):
+    """Normalize DATABASE_URL from Render/Supabase env (quotes, newlines, scheme)."""
+    if not raw:
+        return ""
+    url = raw.strip().strip('"').strip("'").strip()
+    # Remove accidental line breaks / spaces inside the URI
+    url = "".join(url.split())
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    # Common paste error: double @@ before host
+    if "@@" in url:
+        url = url.replace("@@", "@", 1)
+    return url
 
-USE_DB = bool(DATABASE_URL)
+DATABASE_URL = _clean_database_url(os.environ.get("DATABASE_URL", ""))
+USE_DB = bool(DATABASE_URL) and DATABASE_URL.startswith("postgresql://")
+if os.environ.get("DATABASE_URL") and not USE_DB:
+    print("WARNING: DATABASE_URL is set but invalid. It must start with postgresql:// and be one line.")
 _pg = None
 
 app = Flask(__name__, static_folder=BASE, static_url_path="")
@@ -37,11 +49,26 @@ CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 
 def get_pg():
-    """Lazy import + connect. Returns connection (caller should close or use with)."""
-    global _pg
+    """Connect using DATABASE_URL. Returns connection (caller should close)."""
     import psycopg2
-    from psycopg2.extras import RealDictCursor
-    conn = psycopg2.connect(DATABASE_URL, connect_timeout=15)
+    if not DATABASE_URL or "://" not in DATABASE_URL:
+        raise RuntimeError("DATABASE_URL missing or invalid")
+    # Redact password for logs on failure
+    try:
+        conn = psycopg2.connect(DATABASE_URL, connect_timeout=20)
+    except Exception as e:
+        safe = DATABASE_URL
+        if "@" in safe and "://" in safe:
+            # postgresql://user:pass@host → postgresql://user:***@host
+            try:
+                pre, post = safe.split("@", 1)
+                if ":" in pre.split("://", 1)[-1]:
+                    scheme_user, _pass = pre.rsplit(":", 1)
+                    safe = scheme_user + ":***@" + post
+            except Exception:
+                safe = "postgresql://***"
+        print("Postgres connect failed. Using URL like:", safe)
+        raise e
     conn.autocommit = True
     return conn
 
