@@ -316,6 +316,48 @@ const QUESTION_BANK = {
 
 
 
+
+  data_analytics: {
+    fresher: {
+      duration: 45,
+      questions: [
+        { id: "da_f1", type: "mcq", marks: 10, question: "What is Data Analytics?", options: ["Process of examining data to find insights and support decisions", "Only storing data", "Only creating websites", "Only writing code"], correct: 0 },
+        { id: "da_f2", type: "mcq", marks: 10, question: "Which of the following is a common data analysis tool?", options: ["Excel / Power BI / Tableau", "Photoshop only", "Word only", "Notepad only"], correct: 0 },
+        { id: "da_f3", type: "mcq", marks: 10, question: "What does KPI stand for?", options: ["Key Performance Indicator", "Key Process Information", "Known Performance Index", "Keep Performance Internal"], correct: 0 },
+        { id: "da_f4", type: "mcq", marks: 10, question: "What is the difference between structured and unstructured data?", options: ["Structured is organized in tables/rows; unstructured is free-form (text, images)", "They are the same", "Unstructured is only numbers", "Structured cannot be analyzed"], correct: 0 },
+        { id: "da_f5", type: "mcq", marks: 10, question: "What is a dashboard used for?", options: ["Visual summary of key metrics for decision making", "Only storing files", "Writing code", "Sending emails"], correct: 0 },
+        { id: "da_f6", type: "coding", marks: 25, question: "Explain the steps you would take to clean a messy sales Excel sheet before analysis. (Minimum 50 characters)", language: "text", minLength: 50 },
+        { id: "da_f7", type: "coding", marks: 25, question: "Write a simple example of how you would calculate average, total, and growth % for monthly sales. (Minimum 50 characters)", language: "text", minLength: 50 }
+      ]
+    },
+    intern: {
+      duration: 40,
+      questions: [
+        { id: "da_i1", type: "mcq", marks: 10, question: "What is the main goal of data analytics?", options: ["Turn data into useful insights for decisions", "Only collect data", "Only delete old data", "Only create charts for fun"], correct: 0 },
+        { id: "da_i2", type: "mcq", marks: 10, question: "Which chart is best for showing trends over time?", options: ["Line chart", "Pie chart only", "Only a table", "Scatter only"], correct: 0 },
+        { id: "da_i3", type: "mcq", marks: 10, question: "What is a pivot table used for?", options: ["Summarizing and analyzing large data quickly", "Only formatting cells", "Only printing", "Creating macros only"], correct: 0 },
+        { id: "da_i4", type: "mcq", marks: 10, question: "What does CSV stand for?", options: ["Comma Separated Values", "Common Sales Values", "Computer System Values", "Central Storage Volume"], correct: 0 },
+        { id: "da_i5", type: "mcq", marks: 10, question: "Which is an example of qualitative data?", options: ["Customer feedback comments", "Age in years", "Salary amount", "Number of orders"], correct: 0 },
+        { id: "da_i6", type: "mcq", marks: 10, question: "What is data visualization?", options: ["Presenting data using charts and graphs", "Hiding data", "Deleting duplicates only", "Writing SQL only"], correct: 0 },
+        { id: "da_i7", type: "mcq", marks: 10, question: "Which tool is widely used for business dashboards?", options: ["Power BI / Tableau", "Only Notepad", "Only Paint", "Only Calculator"], correct: 0 },
+        { id: "da_i8", type: "mcq", marks: 10, question: "What should you check first when data looks wrong?", options: ["Source of data and possible entry errors", "Delete all rows", "Ignore it", "Change the chart colors only"], correct: 0 },
+        { id: "da_i9", type: "mcq", marks: 10, question: "What is a filter used for in Excel or BI tools?", options: ["Show only rows that match certain conditions", "Delete the file", "Lock the sheet permanently", "Change font only"], correct: 0 },
+        { id: "da_i10", type: "mcq", marks: 10, question: "Why is data quality important?", options: ["Bad data leads to wrong insights and decisions", "It is not important", "Only for large companies", "Only for coding teams"], correct: 0 }
+      ]
+    },
+    experienced: {
+      duration: 55,
+      questions: [
+        { id: "da_e1", type: "mcq", marks: 10, question: "What is the difference between descriptive and predictive analytics?", options: ["Descriptive explains what happened; predictive estimates what may happen", "They are the same", "Predictive only uses Excel", "Descriptive needs AI always"], correct: 0 },
+        { id: "da_e2", type: "mcq", marks: 10, question: "What is ETL?", options: ["Extract, Transform, Load", "Excel Table List", "End Transaction Log", "Easy Table Lookup"], correct: 0 },
+        { id: "da_e3", type: "mcq", marks: 10, question: "What is a star schema used for?", options: ["Organizing data warehouse tables for analytics", "UI design", "Email templates", "Password storage"], correct: 0 },
+        { id: "da_e4", type: "mcq", marks: 10, question: "Which SQL clause groups rows for aggregation?", options: ["GROUP BY", "ORDER BY only", "WHERE only", "LIMIT only"], correct: 0 },
+        { id: "da_e5", type: "coding", marks: 30, question: "Write a SQL query example that calculates total sales by region and filters regions with sales above 100000. (Minimum 50 characters)", language: "sql", minLength: 50 },
+        { id: "da_e6", type: "coding", marks: 30, question: "How would you design a simple sales dashboard for management? List key metrics, charts, and filters. (Minimum 50 characters)", language: "text", minLength: 50 }
+      ]
+    }
+  },
+
   finance: {
     fresher: {
       duration: 45,

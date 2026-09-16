@@ -2332,7 +2332,7 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
         '<button class="btn btn-primary" onclick="resendLink(\'' + id + '\')">🔗 Resend / Generate New Link</button>' +
         '<button class="btn btn-outline" onclick="printReport(\'' + id + '\')">Print / PDF Report</button>' +
         '<button class="btn btn-outline" onclick="printProctorReport(\'' + id + '\')">📄 Proctoring PDF (photos/video log)</button>' +
-        (isAdmin() ? '<button class="btn btn-danger" onclick="deleteCandidate(\'' + id + '\')">🗑 Delete Candidate</button>' : '') +
+        (isAdmin() ? '<button class="btn btn-outline" onclick="clearCandidateMedia(\'' + id + '\')">Clear media</button> <button class="btn btn-danger" onclick="deleteCandidate(\'' + id + '\')">Delete Candidate</button>' : '') +
         '</div>' +
         '<div id="resendResult-' + id + '" style="margin-top:0.8rem;"></div>';
       document.getElementById('detailContent').innerHTML = html;
@@ -2534,6 +2534,35 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
       list[idx].helpUnreadCandidate = true;
       saveAssessments(list);
       if (typeof logActivity === 'function') logActivity('Help reply', list[idx].name);
+      viewDetail(id);
+      refreshAll();
+    }
+
+    async function clearCandidateMedia(id) {
+      if (!isAdmin()) return alert('Admin only');
+      if (!confirm('Delete photos & videos for this candidate? Scores and answers will be KEPT.')) return;
+      try {
+        const res = await fetch(`${BACKEND_BASE}/api/assessments/${encodeURIComponent(id)}/media`, {
+          method: 'DELETE',
+          headers: authHeaders()
+        });
+        if (res.status === 401) { forceReLogin(); return; }
+        if (!res.ok) { alert('Could not clear media'); return; }
+      } catch (e) {
+        alert('Backend error');
+        return;
+      }
+      const list = getAssessments();
+      const idx = list.findIndex(x => x.id === id);
+      if (idx >= 0) {
+        list[idx].photoHistory = [];
+        list[idx].videoHistory = [];
+        list[idx].lastPhoto = null;
+        list[idx].lastPhotoAt = null;
+        list[idx].lastVideoAt = null;
+        localStorage.setItem('assessments', JSON.stringify(list));
+      }
+      alert('Media cleared. Record kept.');
       viewDetail(id);
       refreshAll();
     }

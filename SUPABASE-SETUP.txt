@@ -1,0 +1,68 @@
+
+QRS Assessment — Permanent storage (Option B: Supabase free)
+============================================================
+
+WHAT YOU GET
+- Candidate records (name, score, answers, flags, status) kept permanently
+- Photos & videos stored with the record; you can delete media after review
+  without deleting scores
+- No more data loss when Render free service sleeps
+
+FREE LIMITS (honest)
+- Supabase free: ~500 MB database — enough for hundreds of test records
+- Photos/videos use the most space — after you verify a candidate, use
+  "Clear media" / delete photos so space stays free
+- Scores and answers stay forever until you delete the candidate
+
+------------------------------------------------
+STEP 1 — Create free Supabase project
+------------------------------------------------
+1. Open https://supabase.com and sign up
+2. New project → pick a name (e.g. qrs-assessment)
+3. Set a strong database password (SAVE IT)
+4. Wait until the project is ready (1–2 minutes)
+
+------------------------------------------------
+STEP 2 — Copy connection string
+------------------------------------------------
+1. In Supabase: Project Settings (gear) → Database
+2. Find "Connection string" → URI
+3. Copy it. It looks like:
+   postgresql://postgres.[ref]:[YOUR-PASSWORD]@aws-0-....pooler.supabase.com:6543/postgres
+4. Replace [YOUR-PASSWORD] with the real password
+5. Prefer the "Session" or "Transaction" pooler URI if shown
+
+------------------------------------------------
+STEP 3 — Add DATABASE_URL on Render
+------------------------------------------------
+1. Render Dashboard → qrs-assessment → Environment
+2. Add Environment Variable:
+   Key:   DATABASE_URL
+   Value: (paste the full connection string)
+3. Save changes
+
+------------------------------------------------
+STEP 4 — Deploy latest backend
+------------------------------------------------
+1. Upload new backend.py + requirements.txt to GitHub
+2. Render → Manual Deploy → Deploy latest commit
+3. Open: https://YOUR-APP.onrender.com/api/health
+   You should see: "storage": "postgres"
+
+------------------------------------------------
+STEP 5 — Restore your backup JSON
+------------------------------------------------
+1. Admin login → Settings → Restore browser data → server
+   OR upload the Backup JSON you already downloaded
+2. Confirm candidates appear in Results
+
+------------------------------------------------
+AFTER VERIFYING A CANDIDATE
+------------------------------------------------
+- Keep: name, score, answers, flags, status (always)
+- Optional: delete photos/videos to free space (API: DELETE /api/assessments/<id>/media)
+  Admin will get a "Clear media" button in a small update
+
+NEON.TECH alternative
+---------------------
+Same idea: create free project → copy connection string → DATABASE_URL on Render
