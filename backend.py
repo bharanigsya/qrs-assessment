@@ -647,6 +647,119 @@ def candidate_token_ok(record, supplied_token):
     return bool(supplied_token) and bool(record.get("token")) and supplied_token == record.get("token")
 
 
+def parse_iso_utc_naive(ts):
+    if not ts:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+        return dt.replace(tzinfo=None)
+    except Exception:
+        return None
+
+
+def is_link_expired(a):
+    exp = parse_iso_utc_naive(a.get("expiresAt"))
+    return bool(exp) and datetime.utcnow() > exp
+
+
+# ---------- Email (SMTP) ----------
+# Works with Gmail (use an App Password, not your normal password), Outlook/Office365,
+# or any SMTP provider. Configure these as environment variables on your host — nothing
+# is hardcoded, and if they're not set, sending is simply disabled (manual "Copy Link" /
+# "Email Link" in admin.html still always works regardless).
+SMTP_HOST = os.environ.get("SMTP_HOST", "")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "587") or "587")
+SMTP_USER = os.environ.get("SMTP_USER", "")
+SMTP_PASS = os.environ.get("SMTP_PASS", "")
+SMTP_FROM_NAME = os.environ.get("SMTP_FROM_NAME", "QRS Assessments")
+SMTP_FROM_EMAIL = os.environ.get("SMTP_FROM_EMAIL", "") or SMTP_USER
+EMAIL_CONFIGURED = bool(SMTP_HOST and SMTP_USER and SMTP_PASS and SMTP_FROM_EMAIL)
+
+
+def send_email(to_email, subject, html_body):
+    """Send one email over SMTP. Returns (ok: bool, error: str|None)."""
+    if not EMAIL_CONFIGURED:
+        return False, "Email sending is not configured on this server (SMTP_HOST/USER/PASS env vars are missing)."
+    if not to_email or "@" not in to_email:
+        return False, "Candidate has no valid email address on file."
+    try:
+        import smtplib
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
+        from email.utils import formataddr
+
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = formataddr((SMTP_FROM_NAME, SMTP_FROM_EMAIL))
+        msg["To"] = to_email
+        # "No-reply" convention: tell the recipient's mail client not to thread replies here.
+        msg["Reply-To"] = SMTP_FROM_EMAIL
+        msg.attach(MIMEText(html_body, "html"))
+
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            server.login(SMTP_USER, SMTP_PASS)
+            server.sendmail(SMTP_FROM_EMAIL, [to_email], msg.as_string())
+        return True, None
+    except Exception as e:
+        print("Email send failed:", e)
+        return False, str(e)
+
+
+def build_link_email_html(name, role, level, link, duration, expires_at_str):
+    return f"""
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#0f172a;">
+      <div style="background:#0f172a;padding:1.2rem 1.5rem;border-radius:12px 12px 0 0;">
+        <span style="color:#fff;font-weight:700;font-size:1.05rem;">QRS Solutions — 2nd Round Assessment</span>
+      </div>
+      <div style="border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;padding:1.5rem;">
+        <p>Hi {name},</p>
+        <p>You've been invited to take the <strong>2nd round assessment</strong> for the <strong>{role}</strong> role ({level} level).</p>
+        <p style="margin:1.3rem 0;text-align:center;">
+          <a href="{link}" style="background:#4f46e5;color:#fff;text-decoration:none;font-weight:600;padding:0.75rem 1.5rem;border-radius:10px;display:inline-block;">Start Assessment</a>
+        </p>
+        <p style="font-size:0.85rem;color:#64748b;word-break:break-all;">Or copy this link: {link}</p>
+        <ul style="font-size:0.9rem;color:#334155;">
+          <li>Duration: {duration} minutes</li>
+          <li>Link valid until: {expires_at_str}</li>
+          <li>A working webcam and microphone are required — please use a desktop/laptop.</li>
+        </ul>
+        <p style="font-size:0.85rem;color:#94a3b8;margin-top:1.5rem;">This is an automated message — please do not reply to this email. If you have questions, contact your recruiter directly.</p>
+      </div>
+    </div>
+    """
+
+
+@app.route("/api/assessments/<aid>/send-link", methods=["POST"])
+@require_admin
+def send_link_email(aid):
+    """Email a candidate their test link. Admin/coordinator only — admin.html supplies
+    the fully-built link since only the frontend knows its own public URL."""
+    body = request.get_json(force=True) or {}
+    a = get_one_assessment(aid)
+    if not a:
+        return jsonify({"ok": False, "error": "Not found"}), 404
+    to_email = body.get("email") or a.get("email")
+    link = body.get("link")
+    if not link:
+        return jsonify({"ok": False, "error": "Missing link"}), 400
+    subject = body.get("subject") or f"Your QRS 2nd Round Assessment Link — {a.get('role','')}"
+    html = build_link_email_html(
+        name=a.get("name", "Candidate"),
+        role=a.get("role", ""),
+        level=a.get("level", ""),
+        link=link,
+        duration=body.get("duration") or a.get("duration") or "—",
+        expires_at_str=body.get("expiresAtLabel") or a.get("expiresAt") or "—",
+    )
+    ok, err = send_email(to_email, subject, html)
+    if ok:
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "error": err}), 502
+
+
 # ---------- Routes ----------
 @app.route("/")
 def index():
@@ -677,6 +790,7 @@ def health():
             "backend": "flask",
             "storage": storage,
             "candidates": count,
+            "email_configured": EMAIL_CONFIGURED,
             "time": datetime.utcnow().isoformat(),
         }
     )
@@ -821,6 +935,12 @@ def update_assessment(aid):
     if existing:
         if not admin_rec and not candidate_token_ok(existing, body.get("token")):
             return jsonify({"ok": False, "error": "Unauthorized"}), 401
+        # A candidate trying to start a test (pending -> in-progress) after the link has
+        # expired is rejected here, even if their browser's own client-side check was
+        # bypassed. Admins are exempt (e.g. reopening/editing an expired record).
+        attempting_start = body.get("status") == "in-progress" and existing.get("status") == "pending"
+        if not admin_rec and attempting_start and is_link_expired(existing):
+            return jsonify({"ok": False, "error": "This link has expired."}), 403
         saved = upsert_assessment(aid, body, merge_existing=True)
         return jsonify(saved)
     if not admin_rec:

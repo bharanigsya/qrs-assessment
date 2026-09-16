@@ -396,6 +396,10 @@
               <small style="color:var(--muted);">Controls how long the generated link remains usable. Example: 24 = link stays alive for 24 hours.</small>
             </div>
           </div>
+          <label style="display:flex;align-items:center;gap:0.5rem;margin-top:0.9rem;font-size:0.88rem;font-weight:500;cursor:pointer;">
+            <input type="checkbox" id="autoEmailOnCreate" checked style="width:auto;">
+            📧 Automatically email this link to the candidate (no-reply style)
+          </label>
           <div style="margin-top:1rem;display:flex;gap:0.75rem;flex-wrap:wrap;">
             <button class="btn btn-primary" onclick="createAssessment()">Generate Secure Link (100 Marks)</button>
             <button class="btn btn-outline" onclick="previewQuestions()">Preview Questions</button>
@@ -427,9 +431,14 @@
           <textarea id="bulkInput" class="code-area" style="min-height:160px;background:#fff;color:#0f172a;font-family:'Fira Code',monospace;font-size:0.85rem;" placeholder="Priya Sharma, priya@email.com, 9876543210, salesforce, fresher
 Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48"></textarea>
           <div style="margin-top:0.9rem;">
+            <label style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.7rem;font-size:0.88rem;font-weight:500;cursor:pointer;">
+              <input type="checkbox" id="autoEmailOnBulk" checked style="width:auto;">
+              📧 Automatically email each link to its candidate (no-reply style)
+            </label>
             <button class="btn btn-primary" onclick="bulkCreate()">Generate Links for All</button>
           </div>
           <div id="bulkResults" style="margin-top:1.2rem;"></div>
+          <div id="bulkEmailStatus" style="margin-top:0.6rem;font-size:0.85rem;color:var(--muted);"></div>
         </div>
       </div>
 
@@ -658,6 +667,14 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
           </p>
           <button class="btn btn-outline" onclick="testBackendConnection()">🔌 Test Backend Connection</button>
           <div id="backendTestResult" style="display:none;margin-top:0.7rem;"></div>
+
+          <hr style="margin:1.4rem 0;border:none;border-top:1px solid var(--border);">
+          <h3 style="font-size:0.95rem;margin-bottom:0.6rem;">Email Delivery (auto-send links)</h3>
+          <p style="font-size:0.85rem;color:var(--muted);margin-bottom:0.7rem;">
+            Checks whether the backend can send emails. Configure <code>SMTP_HOST</code>, <code>SMTP_PORT</code>, <code>SMTP_USER</code>, <code>SMTP_PASS</code>, and optionally <code>SMTP_FROM_NAME</code>/<code>SMTP_FROM_EMAIL</code> as environment variables on your host (Render → your service → Environment). Works with a Gmail App Password, Outlook, or any SMTP provider. Manual "Copy Link"/"Email Link" always work regardless of this.
+          </p>
+          <button class="btn btn-outline" onclick="testEmailConfig()">✉️ Test Email Configuration</button>
+          <div id="emailTestResult" style="display:none;margin-top:0.7rem;"></div>
 
           <hr style="margin:1.4rem 0;border:none;border-top:1px solid var(--border);">
           <h3 style="font-size:0.95rem;margin-bottom:0.6rem;">Notifications</h3>
@@ -1047,6 +1064,22 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
 
     // Quick reachability check for BACKEND_BASE — used by the "Test Backend Connection"
     // button in Settings, and to warn right after creating a link if the sync failed.
+    async function testEmailConfig() {
+      const el = document.getElementById('emailTestResult');
+      if (el) { el.style.display = 'block'; el.className = 'alert alert-info'; el.textContent = 'Checking...'; }
+      try {
+        const res = await fetch(`${BACKEND_BASE}/api/health`);
+        const health = await res.json().catch(() => ({}));
+        if (health.email_configured) {
+          if (el) { el.className = 'alert alert-success'; el.textContent = '✅ Email is configured on the backend. Auto-email on Create/Bulk Invite/Resend will attempt to send.'; }
+        } else {
+          if (el) { el.className = 'alert alert-danger'; el.textContent = '⚠️ Email is NOT configured — SMTP_HOST/SMTP_USER/SMTP_PASS environment variables are missing on your backend host. Auto-email will fail until these are set (manual Copy Link/Email Link still work fine).'; }
+        }
+      } catch (e) {
+        if (el) { el.className = 'alert alert-danger'; el.textContent = '❌ Could not reach the backend to check email status.'; }
+      }
+    }
+
     async function testBackendConnection(showResultInline) {
       const el = document.getElementById('backendTestResult');
       if (el) { el.style.display = 'block'; el.className = 'alert alert-info'; el.textContent = 'Checking ' + (BACKEND_BASE || '(same origin)') + ' ...'; }
@@ -1500,6 +1533,24 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         window.lastCandName = name;
         window.lastCandEmail = email;
 
+        if (synced && document.getElementById('autoEmailOnCreate').checked) {
+          const emailStatusEl = document.createElement('div');
+          emailStatusEl.className = 'alert alert-info';
+          emailStatusEl.style.marginTop = '0.55rem';
+          emailStatusEl.textContent = '📧 Emailing link to ' + email + ' ...';
+          document.getElementById('linkDetails').appendChild(emailStatusEl);
+          sendLinkEmail(record, fullUrl).then(result => {
+            if (result.ok) {
+              emailStatusEl.className = 'alert alert-success';
+              emailStatusEl.textContent = '✅ Link emailed to ' + email;
+              if (typeof logActivity === 'function') logActivity('Emailed link', name + ' <' + email + '>');
+            } else {
+              emailStatusEl.className = 'alert alert-danger';
+              emailStatusEl.innerHTML = '⚠️ Auto-email failed (' + (result.error || 'unknown error') + '). Use the Email Link / Copy Link buttons below instead. <button class="btn btn-outline" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="sendLinkEmail(getAssessments().find(a=>a.id===\'' + id + '\'), \'' + fullUrl + '\').then(r=>alert(r.ok?\'Sent!\':\'Failed: \'+r.error))">Retry email</button>';
+            }
+          });
+        }
+
         document.getElementById('candName').value = '';
         document.getElementById('candEmail').value = '';
         document.getElementById('candMobile').value = '';
@@ -1512,6 +1563,29 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       } catch (err) {
         console.error(err);
         alert('Could not generate link: ' + (err && err.message ? err.message : err));
+      }
+    }
+
+    // Sends the candidate their link via the backend's SMTP relay. Returns {ok, error, skipped}.
+    async function sendLinkEmail(record, fullUrl, opts) {
+      opts = opts || {};
+      try {
+        const res = await fetch(`${BACKEND_BASE}/api/assessments/${record.id}/send-link`, {
+          method: 'POST',
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({
+            email: record.email,
+            link: fullUrl,
+            duration: record.duration,
+            expiresAtLabel: record.expiresAt ? new Date(record.expiresAt).toLocaleString() : null,
+            subject: opts.subject
+          })
+        });
+        if (res.status === 401) { forceReLogin(); return { ok: false, error: 'Session expired' }; }
+        const data = await res.json().catch(() => ({}));
+        return { ok: !!data.ok, error: data.error };
+      } catch (e) {
+        return { ok: false, error: 'Could not reach backend' };
       }
     }
 
@@ -1708,13 +1782,26 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
           createdAt: new Date().toISOString(), startedAt: null, completedAt: null
         };
         list.unshift(record);
-        results.push({ name, email, link: 'test.html?id=' + id + '&token=' + token });
+        results.push({ name, email, link: 'test.html?id=' + id + '&token=' + token, record });
       });
 
       const syncResults = await saveAssessments(list);
       const failedCount = syncResults.filter(ok => !ok).length;
       renderBulkResults(results, errors, failedCount);
       refreshAll();
+
+      if (document.getElementById('autoEmailOnBulk').checked) {
+        const emailBox = document.getElementById('bulkEmailStatus');
+        let sent = 0, failed = 0;
+        for (const r of results) {
+          if (!r.email) continue;
+          const fullUrl = window.location.origin + window.location.pathname.replace(/admin\.html.*/, '') + r.link;
+          const result = await sendLinkEmail(r.record, fullUrl);
+          if (result.ok) sent++; else failed++;
+          if (emailBox) emailBox.innerHTML = '📧 Emailing candidates... ' + (sent + failed) + '/' + results.length + ' (✅ ' + sent + ' sent, ⚠️ ' + failed + ' failed)';
+        }
+        if (emailBox) emailBox.innerHTML = '📧 Done emailing: ✅ ' + sent + ' sent' + (failed ? ', ⚠️ ' + failed + ' failed (use Email Link/Copy Link for those candidates instead)' : '') + '.';
+      }
     }
 
     function renderBulkResults(results, errors, failedCount) {
@@ -2519,6 +2606,16 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
 
         refreshAll();
         try { viewDetail(id); } catch (e) {}
+
+        if (a.email && confirm('Also email this new link to ' + a.email + ' now?')) {
+          const box = document.getElementById('resendResult-' + id);
+          if (box) box.innerHTML = '<div class="alert alert-info">📧 Sending...</div>';
+          sendLinkEmail(a, fullUrl, { subject: 'Your QRS Assessment Link (Updated)' }).then(result => {
+            if (box) box.innerHTML = result.ok
+              ? '<div class="alert alert-success">✅ Emailed to ' + a.email + '</div>'
+              : '<div class="alert alert-danger">⚠️ Email failed: ' + (result.error || 'unknown error') + '</div>';
+          });
+        }
 
       } catch (err) {
         console.error(err);
