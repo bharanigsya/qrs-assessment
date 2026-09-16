@@ -286,6 +286,7 @@
         <div id="backupReminder" class="alert alert-warning" style="display:none;margin-bottom:1rem;"></div>
         <div style="display:flex;gap:0.6rem;flex-wrap:wrap;margin-bottom:1rem;">
           <button class="btn btn-outline" onclick="downloadBackup()">⬇ Download Backup JSON</button>
+          <button class="btn btn-primary" onclick="restoreLocalToBackend()">⬆ Restore browser → server</button>
           <button class="btn btn-outline" onclick="exportCSV()">Export CSV</button>
         </div>
         <div class="stat-grid" id="statGrid"></div>
@@ -642,6 +643,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
           </p>
           <div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center;">
             <button class="btn btn-outline" onclick="downloadBackup()">⬇ Download Backup (JSON)</button>
+            <button class="btn btn-primary" onclick="restoreLocalToBackend()">⬆ Restore browser data → server</button>
             <label class="btn btn-outline" style="cursor:pointer;">
               ⬆ Restore from Backup
               <input type="file" accept="application/json" onchange="restoreBackup(this)" style="display:none;">
@@ -1028,29 +1030,94 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
 
     // Pull the latest data from the backend (e.g. results/flags/photos a candidate
     // submitted on a different device) and merge it into local storage.
+    function preferAssessment(a, b) {
+      if (!a) return b;
+      if (!b) return a;
+      const rank = (x) => {
+        if (x.status === 'completed') return 4;
+        if (x.status === 'flagged') return 3;
+        if (x.status === 'in-progress') return 2;
+        return 1;
+      };
+      if (rank(a) !== rank(b)) return rank(a) > rank(b) ? a : b;
+      const scoreA = (a.score != null ? 1 : 0) + (a.answers ? Object.keys(a.answers).length : 0);
+      const scoreB = (b.score != null ? 1 : 0) + (b.answers ? Object.keys(b.answers).length : 0);
+      if (scoreA !== scoreB) return scoreA > scoreB ? a : b;
+      const ta = new Date(a.completedAt || a.startedAt || a.createdAt || 0).getTime();
+      const tb = new Date(b.completedAt || b.startedAt || b.createdAt || 0).getTime();
+      return ta >= tb ? a : b;
+    }
+
+    async function restoreLocalToBackend() {
+      const local = getAssessments();
+      if (!local.length) return alert('No candidates saved in this browser to restore.');
+      if (!confirm('Upload ' + local.length + ' candidate(s) from this browser to the server?\n\nUse this after Render wiped disk data.')) return;
+      let ok = 0, fail = 0;
+      for (const rec of local) {
+        try {
+          const { photoHistory, videoHistory, ...payload } = rec;
+          const res = await fetch(`${BACKEND_BASE}/api/assessments/${rec.id}`, {
+            method: 'PUT',
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify(payload)
+          });
+          if (res.status === 401) { forceReLogin(); return; }
+          if (res.ok) ok++; else fail++;
+        } catch (e) { fail++; }
+      }
+      alert('Restore done.\nUploaded: ' + ok + (fail ? ('\nFailed: ' + fail) : ''));
+      sessionStorage.removeItem('qrs_auto_restore_tried');
+      await pullFromBackend();
+      refreshAll();
+    }
+
     async function pullFromBackend() {
       try {
         const res = await fetch(`${BACKEND_BASE}/api/assessments`, { headers: authHeaders() });
         if (res.status === 401) { forceReLogin(); return; }
         if (!res.ok) return;
         const remote = await res.json();
+        if (!Array.isArray(remote)) return;
         const local = getAssessments();
         const warnEl = document.getElementById('dataLossWarning');
-        // A reachable backend that suddenly reports far fewer candidates than we have cached
-        // locally is the signature of Render's free-tier disk being wiped on restart — surface
-        // it loudly instead of silently keeping the stale local copy, which just looks "stuck".
-        if (Array.isArray(remote) && local.length > 0 && remote.length < local.length * 0.5) {
+
+        const wiped = local.length > 0 && remote.length < Math.max(1, Math.floor(local.length * 0.5));
+        if (wiped) {
           if (warnEl) {
             warnEl.style.display = 'block';
-            warnEl.innerHTML = '<div class="alert alert-danger">⚠️ <strong>Possible data loss:</strong> the backend now has ' + remote.length + ' candidate record(s), down from ' + local.length + ' this browser had cached. This usually means the backend\'s storage got reset (common on Render\'s free tier after the service sleeps and restarts — its disk isn\'t permanent). Any results/photos/videos that only existed on the backend may be gone. Check Settings → Test Backend Connection for details, and consider adding a persistent disk or moving to a database so this stops happening. <button class="btn btn-outline" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="document.getElementById(\'dataLossWarning\').style.display=\'none\'">Dismiss</button></div>';
+            warnEl.innerHTML = '<div class="alert alert-danger"><strong>Possible data loss on server.</strong> Backend has <strong>' + remote.length + '</strong> candidate(s); this browser has <strong>' + local.length + '</strong>. Render free disk often clears after sleep/restart.<br><br>' +
+              '<button class="btn btn-primary" style="padding:0.35rem 0.8rem;margin:0.25rem 0.35rem 0.25rem 0;" onclick="restoreLocalToBackend()">⬆ Restore browser data → server</button>' +
+              '<button class="btn btn-outline" style="padding:0.35rem 0.8rem;margin:0.25rem 0.35rem 0.25rem 0;" onclick="downloadBackup()">⬇ Backup JSON</button>' +
+              '<button class="btn btn-outline" style="padding:0.35rem 0.8rem;margin:0.25rem 0;" onclick="document.getElementById(\'dataLossWarning\').style.display=\'none\'">Dismiss</button></div>';
           }
-        } else if (warnEl && Array.isArray(remote) && remote.length >= local.length) {
-          warnEl.style.display = 'none';
+          // Keep richer local data; push local → server once per session
+          if (!sessionStorage.getItem('qrs_auto_restore_tried')) {
+            sessionStorage.setItem('qrs_auto_restore_tried', '1');
+            for (const rec of local) {
+              try {
+                const { photoHistory, videoHistory, ...payload } = rec;
+                await fetch(`${BACKEND_BASE}/api/assessments/${rec.id}`, {
+                  method: 'PUT',
+                  headers: authHeaders({ 'Content-Type': 'application/json' }),
+                  body: JSON.stringify(payload)
+                });
+              } catch (e) {}
+            }
+          }
+          // Merge without letting empty/thin remote wipe local completed records
+          const byId = {};
+          local.forEach(a => { byId[a.id] = a; });
+          remote.forEach(r => { byId[r.id] = preferAssessment(byId[r.id], r); });
+          localStorage.setItem('assessments', JSON.stringify(Object.values(byId)));
+          return;
         }
-        if (!Array.isArray(remote) || !remote.length) return;
+
+        if (warnEl && remote.length >= local.length) warnEl.style.display = 'none';
+        if (!remote.length && !local.length) return;
+
         const byId = {};
         local.forEach(a => { byId[a.id] = a; });
-        remote.forEach(r => { byId[r.id] = r; }); // backend is authoritative once synced
+        remote.forEach(r => { byId[r.id] = preferAssessment(byId[r.id], r); });
         localStorage.setItem('assessments', JSON.stringify(Object.values(byId)));
       } catch (e) {
         console.warn('Backend pull failed (backend may not be running):', e);
@@ -2699,15 +2766,22 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
     }
 
     function refreshAll() {
-      renderDashboard();
-      renderResults();
-      renderFlagged();
-      renderLiveCandidates();
-      renderLiveMonitor();
-      refreshLiveFeedIfOpen();
-      renderHelpSupport();
-      if (document.getElementById('tab-ranking') && document.getElementById('tab-ranking').classList.contains('active')) renderRanking();
-      if (name === 'activity') renderActivityLog();
+      try { renderDashboard(); } catch (e) { console.warn(e); }
+      try { renderResults(); } catch (e) { console.warn(e); }
+      try { renderFlagged(); } catch (e) { console.warn(e); }
+      try { renderLiveCandidates(); } catch (e) { console.warn(e); }
+      try { renderLiveMonitor(); } catch (e) { console.warn(e); }
+      try { refreshLiveFeedIfOpen(); } catch (e) { console.warn(e); }
+      try { renderHelpSupport(); } catch (e) { console.warn(e); }
+      try {
+        if (typeof updateHelpBadge === 'function') updateHelpBadge();
+        if (typeof updateBackupReminder === 'function') updateBackupReminder();
+        if (typeof renderTodaySchedule === 'function') renderTodaySchedule();
+      } catch (e) { console.warn(e); }
+      try {
+        if (document.getElementById('tab-ranking') && document.getElementById('tab-ranking').classList.contains('active')) renderRanking();
+        if (document.getElementById('tab-activity') && document.getElementById('tab-activity').classList.contains('active')) renderActivityLog();
+      } catch (e) { console.warn(e); }
     }
 
     setInterval(async function() {
