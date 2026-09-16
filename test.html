@@ -266,8 +266,9 @@
       // ===== Link expiry check =====
       if (assessment.expiresAt && Date.now() > new Date(assessment.expiresAt).getTime()) {
         document.getElementById('linkExpiredUI').style.display = 'block';
-        document.getElementById('expiredMsg').textContent =
-          'This link expired on ' + new Date(assessment.expiresAt).toLocaleString() + '.';
+        document.getElementById('expiredMsg').innerHTML =
+          'This link expired on <strong>' + new Date(assessment.expiresAt).toLocaleString() + '</strong>.' +
+          '<br><br>Please contact the recruiter and ask them to click <strong>Resend / Generate New Link</strong> or <strong>+1h</strong> in Admin.';
         return;
       }
 

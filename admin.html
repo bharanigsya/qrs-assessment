@@ -1419,15 +1419,26 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
 
       const scheduledDate = scheduledAtInput ? new Date(scheduledAtInput) : null;
       if (scheduledDate && isNaN(scheduledDate.getTime())) return alert('Please select a valid scheduled start time.');
-      if (scheduledDate && scheduledDate.getTime() < Date.now()) {
-        if (!confirm('Scheduled start is in the past. Continue anyway (link unlocks immediately)?')) return;
+      let scheduledAt = null;
+      if (scheduledDate) {
+        if (scheduledDate.getTime() < Date.now()) {
+          if (!confirm('Scheduled start is in the past. Link will unlock immediately and stay valid for ' + linkValidityHours + ' hour(s) from now. Continue?')) return;
+          scheduledAt = null; // past schedule = no lock; avoid computing expiry from a past time
+        } else {
+          scheduledAt = scheduledDate.toISOString();
+        }
       }
-      const scheduledAt = scheduledDate ? scheduledDate.toISOString() : null;
       const createdAt = new Date().toISOString();
-      // If a start time is scheduled, the link expires after the chosen validity period
-      // from that scheduled start. Otherwise it expires after the chosen period from creation.
-      const linkValidFrom = scheduledAt || createdAt;
-      const expiresAt = new Date(new Date(linkValidFrom).getTime() + linkValidityHours * 60 * 60 * 1000).toISOString();
+      // Future schedule: unlock at schedule, expire at schedule + validity.
+      // No schedule (or past cleared): valid from now for linkValidityHours.
+      // NEVER set expiresAt in the past.
+      const linkValidFrom = (scheduledAt && new Date(scheduledAt).getTime() > Date.now())
+        ? scheduledAt
+        : createdAt;
+      let expiresAt = new Date(new Date(linkValidFrom).getTime() + linkValidityHours * 60 * 60 * 1000).toISOString();
+      if (new Date(expiresAt).getTime() <= Date.now()) {
+        expiresAt = new Date(Date.now() + linkValidityHours * 60 * 60 * 1000).toISOString();
+      }
 
       const id = 'ASMT-' + Date.now().toString(36).toUpperCase();
       const token = Math.random().toString(36).substring(2, 12);
@@ -1672,8 +1683,15 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
           else errors.push('Line ' + (i + 1) + ': link validity "' + validityRaw + '" is invalid, using 24 hours instead');
         }
 
-        const linkValidFrom = scheduledAt || new Date().toISOString();
-        const expiresAt = new Date(new Date(linkValidFrom).getTime() + linkValidityHours * 60 * 60 * 1000).toISOString();
+        let linkValidFrom = scheduledAt || new Date().toISOString();
+        if (scheduledAt && new Date(scheduledAt).getTime() <= Date.now()) {
+          scheduledAt = null;
+          linkValidFrom = new Date().toISOString();
+        }
+        let expiresAt = new Date(new Date(linkValidFrom).getTime() + linkValidityHours * 60 * 60 * 1000).toISOString();
+        if (new Date(expiresAt).getTime() <= Date.now()) {
+          expiresAt = new Date(Date.now() + linkValidityHours * 60 * 60 * 1000).toISOString();
+        }
 
         const id = 'ASMT-' + Date.now().toString(36).toUpperCase() + '-' + i;
         const token = Math.random().toString(36).substring(2, 12);
@@ -2315,6 +2333,8 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         '<div class="detail-row"><span>Scheduled Start</span><span>' + (a.scheduledAt ? new Date(a.scheduledAt).toLocaleString() : 'Any time') + '</span></div>' +
         '<div class="detail-row"><span>Link Valid For</span><span>' + (a.linkValidityHours ? a.linkValidityHours + ' hours' : '—') + '</span></div>' +
         '<div class="detail-row"><span>Link Expires</span><span>' + (a.expiresAt ? new Date(a.expiresAt).toLocaleString() : '—') + '</span></div>' +
+        (a.lastLinkUrl ? '<div class="detail-row"><span>Last generated link</span><span style="word-break:break-all;max-width:420px;"><a href="' + a.lastLinkUrl + '" target="_blank" style="color:#4f46e5;">' + a.lastLinkUrl + '</a></span></div>' : '') +
+        (a.lastLinkUrl ? '<div style="margin:0.35rem 0 0.6rem;"><button type="button" class="btn btn-success" style="padding:0.35rem 0.75rem;font-size:0.85rem;" onclick="navigator.clipboard.writeText(\'' + String(a.lastLinkUrl).replace(/'/g,'') + '\').then(function(){alert(\'Link copied\')})">Copy last link</button></div>' : '') +
         '<div class="detail-row"><span>Started</span><span>' + (a.startedAt ? new Date(a.startedAt).toLocaleString() : '—') + '</span></div>' +
         '<div class="detail-row"><span>Completed</span><span>' + (a.completedAt ? new Date(a.completedAt).toLocaleString() : '—') + '</span></div>' +
         '<div class="detail-row"><span>Flags</span><span>' + (a.flags ? a.flags.length : 0) + '</span></div>' +
@@ -2447,11 +2467,19 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
         a.token = newToken;
         a.linkValidityHours = a.linkValidityHours || 24;
         const now = Date.now();
+        // Clear past schedule locks so resend never produces an already-expired link
+        if (a.scheduledAt && new Date(a.scheduledAt).getTime() <= now) {
+          a.scheduledAt = null;
+        }
         if (a.scheduledAt && new Date(a.scheduledAt).getTime() > now) {
           a.linkValidFrom = a.scheduledAt;
           a.expiresAt = new Date(new Date(a.scheduledAt).getTime() + a.linkValidityHours * 60 * 60 * 1000).toISOString();
         } else {
           a.linkValidFrom = new Date().toISOString();
+          a.expiresAt = new Date(now + a.linkValidityHours * 60 * 60 * 1000).toISOString();
+        }
+        // Safety: never leave expiresAt in the past after resend
+        if (new Date(a.expiresAt).getTime() <= now) {
           a.expiresAt = new Date(now + a.linkValidityHours * 60 * 60 * 1000).toISOString();
         }
         // Resend always re-opens the link for the candidate
@@ -2470,36 +2498,24 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
         window.generatedLink = link;
         window.lastCandName = a.name;
         window.lastCandEmail = a.email;
+        a.lastLinkUrl = fullUrl;
+        list[idx] = a;
+        lsSet('assessments', JSON.stringify(list));
+        try { await syncRecordToBackend(a); } catch (e2) {}
 
-        let box = document.getElementById('resendResult-' + id);
-        if (!box) {
-          box = document.createElement('div');
-          box.id = 'resendResult-' + id;
-          box.style.marginTop = '0.8rem';
-          const content = document.getElementById('detailContent');
-          if (content) content.appendChild(box);
-        }
-        const unlockLabel = (a.scheduledAt && new Date(a.scheduledAt).getTime() > Date.now())
-          ? new Date(a.scheduledAt).toLocaleString()
-          : 'Available immediately';
-        box.innerHTML =
-          '<div class="alert alert-success">' +
-          '<strong>New link generated' + (synced ? ' and saved to server' : ' (saved in browser — server sync failed)') + '</strong>' +
-          '<div style="margin:0.5rem 0;word-break:break-all;"><a href="' + fullUrl + '" target="_blank" style="color:#4f46e5;">' + fullUrl + '</a></div>' +
-          '<div style="margin:0.65rem 0;padding:0.75rem 0.9rem;background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;color:#1e293b;font-size:0.88rem;line-height:1.55;">' +
-          '<div style="font-weight:700;color:#3730a3;margin-bottom:0.35rem;">Link timing</div>' +
-          '<div><strong>Unlocks:</strong> ' + unlockLabel + '</div>' +
-          '<div><strong>Expires:</strong> ' + (a.expiresAt ? new Date(a.expiresAt).toLocaleString() : '—') + '</div>' +
-          '<div><strong>Valid for:</strong> ' + (a.linkValidityHours || 24) + ' hour(s)</div>' +
-          '<div><strong>Test duration:</strong> ' + (a.duration || '—') + ' minutes</div>' +
-          '</div>' +
-          '<button class="btn btn-success" style="padding:0.35rem 0.75rem;font-size:0.85rem;" onclick="navigator.clipboard.writeText(\'' + fullUrl.replace(/'/g, "\\'") + '\').then(function(){alert(\'Copied\')})">Copy Link</button>' +
-          '</div>';
-        if (typeof showToast === 'function') showToast('New link ready');
-        else alert('New link ready — see below');
+        // Copy + alert so the link is always visible (modal refresh was hiding it)
+        try { await navigator.clipboard.writeText(fullUrl); } catch (e3) {}
+        alert(
+          'NEW LINK READY (also copied to clipboard if allowed)\\n\\n' +
+          fullUrl + '\\n\\n' +
+          'Unlocks: ' + ((a.scheduledAt && new Date(a.scheduledAt).getTime() > Date.now()) ? new Date(a.scheduledAt).toLocaleString() : 'Available immediately') + '\\n' +
+          'Expires: ' + (a.expiresAt ? new Date(a.expiresAt).toLocaleString() : '—') + '\\n' +
+          'Valid for: ' + (a.linkValidityHours || 24) + ' hour(s)'
+        );
+
         refreshAll();
-        // keep detail open with updated status
         try { viewDetail(id); } catch (e) {}
+
       } catch (err) {
         console.error(err);
         alert('Resend failed: ' + (err.message || err));
