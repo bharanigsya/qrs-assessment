@@ -260,6 +260,11 @@
             th.textContent = 'Your note was already submitted. Thank you.';
           }
         }
+        // Reopening a completed link is also a safety net: if the original submission
+        // never made it to the backend (network blip, backend was briefly down), this
+        // makes sure it gets delivered now instead of the admin panel staying stuck on
+        // "in progress" forever.
+        ensureResultDelivered();
         return;
       }
 
@@ -485,17 +490,39 @@
       syncAssessmentToBackend();
     }
 
-    async function syncAssessmentToBackend() {
-      try {
-        const { photoHistory, videoHistory, ...payload } = assessment;
-        await fetch(`${BACKEND_BASE}/api/assessments/${assessment.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-      } catch (e) {
-        console.warn('Backend sync failed (backend may not be running):', e);
+    async function syncAssessmentToBackend(retries = 3) {
+      const { photoHistory, videoHistory, ...payload } = assessment;
+      for (let attempt = 0; attempt <= retries; attempt++) {
+        try {
+          const res = await fetch(`${BACKEND_BASE}/api/assessments/${assessment.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          if (res.ok) return true;
+        } catch (e) {
+          console.warn('Backend sync attempt ' + (attempt + 1) + ' failed:', e);
+        }
+        if (attempt < retries) await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt))); // 1s, 2s, 4s...
       }
+      return false;
+    }
+
+    // Keeps quietly retrying in the background (even after the "Test Completed" screen is
+    // shown) until the result is confirmed saved on the backend. A single failed sync used
+    // to mean the candidate's finished result never reached the admin at all — this makes
+    // sure a brief network blip or a slow/cold backend doesn't lose it permanently.
+    function ensureResultDelivered() {
+      let attempts = 0;
+      const maxAttempts = 20; // spaced 30s apart => up to ~10 minutes of retrying
+      const tryOnce = async () => {
+        attempts++;
+        const ok = await syncAssessmentToBackend(1);
+        if (ok) { console.log('Result confirmed delivered to backend.'); return; }
+        if (attempts < maxAttempts) setTimeout(tryOnce, 30000);
+        else console.warn('Could not confirm the result reached the backend after repeated attempts.');
+      };
+      setTimeout(tryOnce, 5000);
     }
 
     // Best-effort: send a single photo to the Flask backend so it's kept even if localStorage can't hold it all.
@@ -1081,6 +1108,7 @@
       assessment.answers = answers;
       assessment.flags = flags;
       saveAssessment();
+      ensureResultDelivered();
 
       document.getElementById('testUI').style.display = 'none';
       document.getElementById('completedUI').style.display = 'block';
