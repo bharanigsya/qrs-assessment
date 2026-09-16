@@ -822,7 +822,9 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
     }
 
 
-    const BACKEND_BASE = ''; // TODO: if you deploy this page on Netlify (separate from the backend), set this to your Render backend URL, e.g. 'https://qrs-round2-backend.onrender.com' (no trailing slash). Leave as '' only when this page and backend.py are served from the same origin/localhost.
+    // Shared backend URL. Override with localStorage key `qrs_backend_base` if admin.html is hosted separately.
+    const DEFAULT_BACKEND_BASE = 'https://qrs-assessment.onrender.com';
+    const BACKEND_BASE = (localStorage.getItem('qrs_backend_base') || DEFAULT_BACKEND_BASE).replace(/\/$/, '');
 
     // ===== Session — real backend-issued & backend-verified token =====
     function authToken() {

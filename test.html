@@ -459,7 +459,11 @@
     }
 
 
-    const BACKEND_BASE = ''; // TODO: if you deploy this page on Netlify (separate from the backend), set this to your Render backend URL, e.g. 'https://qrs-round2-backend.onrender.com' (no trailing slash). Leave as '' only when this page and backend.py are served from the same origin/localhost.
+    // Shared backend configuration. If test.html is hosted separately from the Flask backend,
+    // change this one URL to your backend's Render URL. It can also be overridden with
+    // localStorage key `qrs_backend_base` without editing the file again.
+    const DEFAULT_BACKEND_BASE = 'https://qrs-assessment.onrender.com';
+    const BACKEND_BASE = (localStorage.getItem('qrs_backend_base') || DEFAULT_BACKEND_BASE).replace(/\/$/, '');
     let backendOverflow = false; // once local storage fills, keep sending new photos straight to backend
 
     function saveAssessment() {
@@ -994,6 +998,7 @@
         el.textContent = `${len} / ${minLen} characters ${len >= minLen ? '✓' : '(minimum required)'}`;
         el.className = 'char-count ' + (len >= minLen ? 'ok' : 'bad');
       }
+      scheduleRecoverySync();
       renderQuestionDots();
     }
 
@@ -1001,6 +1006,7 @@
       answers[qid] = value;
       assessment.answers = answers;
       saveAssessment();
+      scheduleRecoverySync();
       renderQuestionDots();
     }
 
@@ -1045,14 +1051,20 @@
         mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
         mediaRecorder.onstop = () => {
           const blob = new Blob(audioChunks, { type: 'audio/webm' });
-          const url = URL.createObjectURL(blob);
-          answers[qid] = url;
-          assessment.answers = answers;
-          saveAssessment();
-          const preview = document.getElementById('audioPreview');
-          if (preview) {
-            preview.innerHTML = `<audio controls src="${url}" style="width:100%;"></audio>`;
-          }
+          const reader = new FileReader();
+          reader.onloadend = async () => {
+            const url = reader.result;
+            answers[qid] = url;
+            assessment.answers = answers;
+            saveAssessment();
+            const preview = document.getElementById('audioPreview');
+            if (preview) {
+              preview.innerHTML = `<audio controls src="${url}" style="width:100%;"></audio>`;
+            }
+            // Explicitly retry the full record after recording finishes.
+            await syncAssessmentToBackend(5);
+          };
+          reader.readAsDataURL(blob);
         };
 
         mediaRecorder.start();
@@ -1289,6 +1301,39 @@
       if (!assessment || assessment.status === 'completed') return;
       if (document.hidden) return; // visibilitychange will handle
       addFlag('Window lost focus (clicked outside test)');
+    });
+
+    // ===== Reliability / recovery safeguards =====
+    // Keep the latest answers on the server even if the candidate refreshes, closes the tab,
+    // briefly loses internet, or the backend wakes from sleep.
+    let recoverySyncTimer = null;
+    function scheduleRecoverySync() {
+      if (!assessment || assessment.status === 'completed') return;
+      clearTimeout(recoverySyncTimer);
+      recoverySyncTimer = setTimeout(() => syncAssessmentToBackend(5), 1200);
+    }
+    setInterval(() => {
+      if (assessment && (assessment.status === 'in-progress' || assessment.status === 'flagged')) {
+        syncAssessmentToBackend(2);
+      }
+    }, 10000);
+    window.addEventListener('online', () => {
+      if (assessment) syncAssessmentToBackend(8);
+    });
+    window.addEventListener('pagehide', () => {
+      try { saveAssessment(); } catch (e) {}
+      // fetch(..., keepalive) is used as a last best-effort delivery mechanism.
+      try {
+        if (assessment && assessment.id) {
+          const { photoHistory, videoHistory, ...payload } = assessment;
+          fetch(`${BACKEND_BASE}/api/assessments/${assessment.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            keepalive: true
+          }).catch(() => {});
+        }
+      } catch (e) {}
     });
 
     // Start
