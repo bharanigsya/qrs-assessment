@@ -43,6 +43,7 @@ USE_DB = bool(DATABASE_URL) and DATABASE_URL.startswith("postgresql://")
 if os.environ.get("DATABASE_URL") and not USE_DB:
     print("WARNING: DATABASE_URL is set but invalid. It must start with postgresql:// and be one line.")
 _pg = None
+_pg_pool = None
 
 app = Flask(__name__, static_folder=BASE, static_url_path="")
 CORS(app, resources={r"/api/*": {"origins": "*"}})
@@ -71,6 +72,49 @@ def get_pg():
         raise e
     conn.autocommit = True
     return conn
+
+
+def get_pg():
+    """Get a pooled connection using DATABASE_URL. Caller MUST return it with put_pg(conn)."""
+    import psycopg2
+    if not DATABASE_URL or "://" not in DATABASE_URL:
+        raise RuntimeError("DATABASE_URL missing or invalid")
+    global _pg_pool
+    if _pg_pool is None:
+        try:
+            import psycopg2.pool
+            # Small pool: Render free tier + Supabase/Neon free tiers both cap connections low.
+            _pg_pool = psycopg2.pool.ThreadedConnectionPool(1, 8, DATABASE_URL, connect_timeout=20)
+        except Exception as e:
+            safe = DATABASE_URL
+            if "@" in safe and "://" in safe:
+                try:
+                    pre, post = safe.split("@", 1)
+                    if ":" in pre.split("://", 1)[-1]:
+                        scheme_user, _pass = pre.rsplit(":", 1)
+                        safe = scheme_user + ":***@" + post
+                except Exception:
+                    safe = "postgresql://***"
+            print("Postgres pool init failed. Using URL like:", safe)
+            raise e
+    conn = _pg_pool.getconn()
+    conn.autocommit = True
+    return conn
+
+
+def put_pg(conn):
+    """Return a connection to the pool (or close it if there is no pool)."""
+    global _pg_pool
+    if _pg_pool is not None:
+        try:
+            _pg_pool.putconn(conn)
+            return
+        except Exception:
+            pass
+    try:
+        conn.close()
+    except Exception:
+        pass
 
 
 def db_init():
@@ -147,7 +191,7 @@ def db_init():
         except Exception as e:
             print("JSON→DB migrate skipped:", e)
     cur.close()
-    conn.close()
+    put_pg(conn)
     print("Postgres storage ready")
 
 
@@ -214,7 +258,7 @@ def load_assessments():
         cur.execute("SELECT payload FROM assessments ORDER BY created_at DESC")
         rows = cur.fetchall()
         cur.close()
-        conn.close()
+        put_pg(conn)
         out = []
         for (payload,) in rows:
             if isinstance(payload, str):
@@ -277,7 +321,7 @@ def save_assessments(data):
         else:
             cur.execute("DELETE FROM assessments")
         cur.close()
-        conn.close()
+        put_pg(conn)
         return
     ensure_data()
     backup_assessments_file(data)
@@ -285,8 +329,103 @@ def save_assessments(data):
         json.dump(data, f, indent=2)
 
 
+def get_one_assessment(aid):
+    """Fetch a single candidate record without loading every other candidate's payload
+    (which, with embedded photos/videos, made every single-candidate lookup very expensive)."""
+    if USE_DB:
+        conn = get_pg()
+        cur = conn.cursor()
+        cur.execute("SELECT payload FROM assessments WHERE id=%s", (aid,))
+        row = cur.fetchone()
+        cur.close()
+        put_pg(conn)
+        if not row:
+            return None
+        payload = row[0]
+        if isinstance(payload, str):
+            payload = json.loads(payload)
+        return payload
+    for a in load_assessments():
+        if a.get("id") == aid:
+            return a
+    return None
+
+
+def count_assessments():
+    """Lightweight count for /api/health — avoids pulling every payload just to len() them."""
+    if USE_DB:
+        conn = get_pg()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM assessments")
+        n = cur.fetchone()[0]
+        cur.close()
+        put_pg(conn)
+        return n
+    return len(load_assessments())
+
+
+def delete_one_assessment(aid):
+    """Delete a single candidate without rewriting the whole table."""
+    if USE_DB:
+        conn = get_pg()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM assessments WHERE id=%s", (aid,))
+        deleted = cur.rowcount > 0
+        cur.close()
+        put_pg(conn)
+        return deleted
+    data = load_assessments()
+    new_data = [a for a in data if a.get("id") != aid]
+    if len(new_data) == len(data):
+        return False
+    save_assessments(new_data)
+    return True
+
+
 def upsert_assessment(aid, body, merge_existing=True):
-    """Insert or update one assessment. Returns the saved record."""
+    """Insert or update ONE assessment. In DB mode this touches only that one row —
+    it used to reload and rewrite the entire assessments table (including every other
+    candidate's embedded photos/videos) on every single answer-sync or photo capture,
+    which got slow and caused timeouts/dropped captures once there were several candidates."""
+    if USE_DB:
+        conn = get_pg()
+        cur = conn.cursor()
+        cur.execute("SELECT payload FROM assessments WHERE id=%s", (aid,))
+        row = cur.fetchone()
+        if row:
+            existing = row[0]
+            if isinstance(existing, str):
+                existing = json.loads(existing)
+            if merge_existing:
+                merged = dict(existing)
+                for k, v in body.items():
+                    if k == "photoHistory" and not v and existing.get("photoHistory"):
+                        continue
+                    if k == "videoHistory" and not v and existing.get("videoHistory"):
+                        continue
+                    merged[k] = v
+            else:
+                merged = dict(body)
+                merged["id"] = aid
+            cur.execute(
+                "UPDATE assessments SET payload=%s::jsonb, status=%s, name=%s, email=%s, updated_at=NOW() WHERE id=%s",
+                (json.dumps(merged), merged.get("status"), merged.get("name"), merged.get("email"), aid),
+            )
+            cur.close()
+            put_pg(conn)
+            return merged
+        item = dict(body)
+        item["id"] = aid
+        cur.execute(
+            "INSERT INTO assessments (id, payload, status, name, email) VALUES (%s,%s::jsonb,%s,%s,%s) "
+            "ON CONFLICT (id) DO UPDATE SET payload=EXCLUDED.payload, status=EXCLUDED.status, "
+            "name=EXCLUDED.name, email=EXCLUDED.email, updated_at=NOW()",
+            (aid, json.dumps(item), item.get("status"), item.get("name"), item.get("email")),
+        )
+        cur.close()
+        put_pg(conn)
+        return item
+    # File mode: fine to load/rewrite the whole (local disk, no network round trip)
     data = load_assessments()
     found = None
     for i, a in enumerate(data):
@@ -322,7 +461,7 @@ def load_admin():
         cur.execute("SELECT username, password, role FROM admin_users")
         rows = cur.fetchall()
         cur.close()
-        conn.close()
+        put_pg(conn)
         return {"users": [{"user": r[0], "pass": r[1], "role": r[2]} for r in rows]}
     ensure_data()
     with open(ADMIN_FILE, "r") as f:
@@ -340,7 +479,7 @@ def save_admin(cred):
                 (u.get("user"), u.get("pass"), u.get("role", "coordinator")),
             )
         cur.close()
-        conn.close()
+        put_pg(conn)
         return
     with open(ADMIN_FILE, "w") as f:
         json.dump(cred, f, indent=2)
@@ -356,7 +495,7 @@ def append_media(aid, kind, data_url, meta=None):
         row = cur.fetchone()
         if not row:
             cur.close()
-            conn.close()
+            put_pg(conn)
             return None, "Not found"
         payload = row[0]
         if isinstance(payload, str):
@@ -389,7 +528,7 @@ def append_media(aid, kind, data_url, meta=None):
             (json.dumps(payload), payload.get("status"), aid),
         )
         cur.close()
-        conn.close()
+        put_pg(conn)
         return payload, None
     # File mode
     data = load_assessments()
@@ -425,7 +564,7 @@ def clear_media(aid):
         row = cur.fetchone()
         if not row:
             cur.close()
-            conn.close()
+            put_pg(conn)
             return False
         payload = row[0]
         if isinstance(payload, str):
@@ -440,7 +579,7 @@ def clear_media(aid):
             (json.dumps(payload), aid),
         )
         cur.close()
-        conn.close()
+        put_pg(conn)
         return True
     data = load_assessments()
     for i, a in enumerate(data):
@@ -529,7 +668,7 @@ def health():
     storage = "postgres" if USE_DB else "json-file"
     count = 0
     try:
-        count = len(load_assessments())
+        count = count_assessments()
     except Exception as e:
         return jsonify({"ok": False, "storage": storage, "error": str(e)}), 500
     return jsonify(
@@ -666,32 +805,27 @@ def create_assessment():
 
 @app.route("/api/assessments/<aid>", methods=["GET"])
 def get_assessment(aid):
-    data = load_assessments()
-    for a in data:
-        if a.get("id") == aid:
-            if current_admin() or candidate_token_ok(a, request.args.get("token")):
-                return jsonify(a)
-            return jsonify({"error": "Unauthorized"}), 401
-    return jsonify({"error": "Not found"}), 404
+    a = get_one_assessment(aid)
+    if not a:
+        return jsonify({"error": "Not found"}), 404
+    if current_admin() or candidate_token_ok(a, request.args.get("token")):
+        return jsonify(a)
+    return jsonify({"error": "Unauthorized"}), 401
 
 
 @app.route("/api/assessments/<aid>", methods=["PUT"])
 def update_assessment(aid):
     body = request.get_json(force=True) or {}
-    data = load_assessments()
     admin_rec = current_admin()
-    for a in data:
-        if a.get("id") == aid:
-            if not admin_rec and not candidate_token_ok(a, body.get("token")):
-                return jsonify({"ok": False, "error": "Unauthorized"}), 401
-            saved = upsert_assessment(aid, body, merge_existing=True)
-            return jsonify(saved)
+    existing = get_one_assessment(aid)
+    if existing:
+        if not admin_rec and not candidate_token_ok(existing, body.get("token")):
+            return jsonify({"ok": False, "error": "Unauthorized"}), 401
+        saved = upsert_assessment(aid, body, merge_existing=True)
+        return jsonify(saved)
     if not admin_rec:
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
-    item = dict(body)
-    item["id"] = aid
-    data.append(item)
-    save_assessments(data)
+    item = upsert_assessment(aid, body, merge_existing=False)
     return jsonify(item), 201
 
 
@@ -702,18 +836,16 @@ def add_photo(aid):
     at = body.get("at") or datetime.utcnow().isoformat()
     if not img:
         return jsonify({"error": "img required"}), 400
-    data = load_assessments()
+    existing = get_one_assessment(aid)
+    if not existing:
+        return jsonify({"error": "Not found"}), 404
     admin_rec = current_admin()
-    for a in data:
-        if a.get("id") == aid:
-            if not admin_rec and not candidate_token_ok(a, body.get("token")):
-                return jsonify({"error": "Unauthorized"}), 401
-            _, err = append_media(aid, "photo", img, {"at": at})
-            if err:
-                return jsonify({"error": err}), 404
-            a2 = next(x for x in load_assessments() if x.get("id") == aid)
-            return jsonify({"ok": True, "count": len(a2.get("photoHistory") or [])})
-    return jsonify({"error": "Not found"}), 404
+    if not admin_rec and not candidate_token_ok(existing, body.get("token")):
+        return jsonify({"error": "Unauthorized"}), 401
+    payload, err = append_media(aid, "photo", img, {"at": at})
+    if err:
+        return jsonify({"error": err}), 404
+    return jsonify({"ok": True, "count": len(payload.get("photoHistory") or [])})
 
 
 @app.route("/api/assessments/<aid>/videos", methods=["POST"])
@@ -724,18 +856,16 @@ def add_video(aid):
     seconds = body.get("seconds") or 15
     if not video:
         return jsonify({"error": "video required"}), 400
-    data = load_assessments()
+    existing = get_one_assessment(aid)
+    if not existing:
+        return jsonify({"error": "Not found"}), 404
     admin_rec = current_admin()
-    for a in data:
-        if a.get("id") == aid:
-            if not admin_rec and not candidate_token_ok(a, body.get("token")):
-                return jsonify({"error": "Unauthorized"}), 401
-            _, err = append_media(aid, "video", video, {"at": at, "seconds": seconds})
-            if err:
-                return jsonify({"error": err}), 404
-            a2 = next(x for x in load_assessments() if x.get("id") == aid)
-            return jsonify({"ok": True, "count": len(a2.get("videoHistory") or [])})
-    return jsonify({"error": "Not found"}), 404
+    if not admin_rec and not candidate_token_ok(existing, body.get("token")):
+        return jsonify({"error": "Unauthorized"}), 401
+    payload, err = append_media(aid, "video", video, {"at": at, "seconds": seconds})
+    if err:
+        return jsonify({"error": err}), 404
+    return jsonify({"ok": True, "count": len(payload.get("videoHistory") or [])})
 
 
 @app.route("/api/assessments/<aid>/media", methods=["DELETE"])
@@ -750,12 +880,9 @@ def delete_media(aid):
 @app.route("/api/assessments/<aid>", methods=["DELETE"])
 @require_admin
 def delete_assessment(aid):
-    data = load_assessments()
-    new_data = [a for a in data if a.get("id") != aid]
-    if len(new_data) == len(data):
-        return jsonify({"error": "Not found"}), 404
-    save_assessments(new_data)
-    return jsonify({"ok": True, "deleted": aid})
+    if delete_one_assessment(aid):
+        return jsonify({"ok": True, "deleted": aid})
+    return jsonify({"error": "Not found"}), 404
 
 
 @app.route("/api/admin/restore", methods=["POST"])
@@ -802,4 +929,4 @@ if __name__ == "__main__":
     print(f" Admin: http://localhost:{port}/admin.html")
     print(" Login: admin / qrs@2026")
     print("=" * 50)
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=port, debug=False, threaded=True)

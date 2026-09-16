@@ -1058,6 +1058,10 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
           if (el) { el.className = 'alert alert-danger'; el.textContent = '⚠️ Backend responded but with an error (HTTP ' + res.status + '). Candidate links on other devices may fail.'; }
           return false;
         }
+        const health = await res.json().catch(() => ({}));
+        const storageLabel = health.storage === 'postgres'
+          ? '💾 Storage: Postgres (permanent)'
+          : '⚠️ Storage: JSON file (NOT permanent — set DATABASE_URL on your host to fix this)';
         // Health check passed — now check whether the backend's DATA matches what we'd expect,
         // since a reachable backend can still have lost its stored candidates (e.g. Render free
         // tier wiping the on-disk data/assessments.json file after a restart).
@@ -1069,13 +1073,13 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
             const remoteCount = Array.isArray(remote) ? remote.length : 0;
             const localCount = getAssessments().length;
             if (remoteCount === 0 && localCount > 0) {
-              if (el) { el.className = 'alert alert-danger'; el.textContent = '⚠️ Backend is reachable (' + ms + 'ms) BUT has 0 candidate records, while this browser has ' + localCount + ' cached locally. This strongly suggests the backend lost its data (common on Render\'s free tier — the disk isn\'t permanent and can be wiped when the service restarts after sleeping). Candidates whose links/results existed only on the backend, like ones who tested from their own device, may be permanently gone. See the Data Backup section, and consider adding a persistent disk on Render or ask me to move storage to a database.'; }
+              if (el) { el.className = 'alert alert-danger'; el.textContent = '⚠️ Backend is reachable (' + ms + 'ms, ' + storageLabel + ') BUT has 0 candidate records, while this browser has ' + localCount + ' cached locally. ' + (health.storage === 'postgres' ? 'Since storage is Postgres, this is unexpected — check the DATABASE_URL is pointing at the right database.' : 'This strongly suggests the backend lost its data (common on Render\'s free tier — the disk isn\'t permanent and can be wiped when the service restarts after sleeping). Candidates whose links/results existed only on the backend, like ones who tested from their own device, may be permanently gone.') + ' See the Data Backup section.'; }
               return false;
             }
             countMsg = ' Backend currently holds ' + remoteCount + ' candidate record(s)' + (remoteCount !== localCount ? ' (this browser has ' + localCount + ' cached locally — some difference is normal, but a big gap can mean lost data)' : '') + '.';
           }
         } catch (e2) { /* count check is best-effort; the health check above already confirmed reachability */ }
-        if (el) { el.className = 'alert alert-success'; el.textContent = '✅ Backend reachable at "' + (BACKEND_BASE || window.location.origin) + '" (' + ms + 'ms).' + countMsg; }
+        if (el) { el.className = 'alert alert-success'; el.textContent = '✅ Backend reachable at "' + (BACKEND_BASE || window.location.origin) + '" (' + ms + 'ms). ' + storageLabel + '.' + countMsg; }
         return true;
       } catch (e) {
         if (el) { el.className = 'alert alert-danger'; el.textContent = '❌ Could not reach the backend at "' + (BACKEND_BASE || window.location.origin) + '". If admin.html is hosted separately from backend.py, set BACKEND_BASE to your backend\'s URL near the top of the script. Candidates opening their link on another device will see "Invalid or Expired Link" until this is fixed.'; }
