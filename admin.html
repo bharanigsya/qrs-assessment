@@ -1364,7 +1364,9 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
 
       const scheduledDate = scheduledAtInput ? new Date(scheduledAtInput) : null;
       if (scheduledDate && isNaN(scheduledDate.getTime())) return alert('Please select a valid scheduled start time.');
-      if (scheduledDate && scheduledDate.getTime() < Date.now()) return alert('Scheduled start time cannot be in the past.');
+      if (scheduledDate && scheduledDate.getTime() < Date.now()) {
+        if (!confirm('Scheduled start is in the past. Continue anyway (link unlocks immediately)?')) return;
+      }
       const scheduledAt = scheduledDate ? scheduledDate.toISOString() : null;
       const createdAt = new Date().toISOString();
       // If a start time is scheduled, the link expires after the chosen validity period
@@ -1393,35 +1395,50 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         completedAt: null
       };
 
-      const list = getAssessments();
-      list.unshift(record);
-      const syncResults = await saveAssessments(list);
-      const synced = syncResults[0]; // this new record is first in the array
+      try {
+        const list = getAssessments();
+        list.unshift(record);
+        // Save locally first so the link always works on this browser
+        localStorage.setItem('assessments', JSON.stringify(list));
+        // Sync ONLY the new record (not all candidates) — avoids hang/timeout
+        let synced = false;
+        try {
+          synced = await syncRecordToBackend(record);
+        } catch (e) {
+          console.warn(e);
+          synced = false;
+        }
 
-      const link = 'test.html?id=' + id + '&token=' + token;
-      const fullUrl = window.location.origin + window.location.pathname.replace(/admin\.html.*/, '') + link;
-      document.getElementById('testLink').href = fullUrl;
-      document.getElementById('testLink').textContent = fullUrl;
-      document.getElementById('linkDetails').innerHTML =
-        '<strong>Test Duration:</strong> ' + duration + ' minutes &nbsp;•&nbsp; ' +
-        '<strong>Link Valid For:</strong> ' + linkValidityHours + ' hours &nbsp;•&nbsp; ' +
-        '<strong>Expires:</strong> ' + new Date(expiresAt).toLocaleString() +
-        (synced ? '' : '<div class="alert alert-danger" style="margin-top:0.6rem;">⚠️ Could not reach the backend just now — if the candidate opens this link on a phone/PC other than this one, they may see "Invalid or Expired Link" until it syncs. <button class="btn btn-outline" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="testBackendConnection()">Test connection</button></div>');
-      logActivity('Assigned assessment', name + ' / ' + role + ' / ' + level);
-      document.getElementById('linkResult').style.display = 'block';
-      window.generatedLink = link;
-      window.lastCandName = name;
-      window.lastCandEmail = email;
+        const link = 'test.html?id=' + id + '&token=' + token;
+        const fullUrl = window.location.origin + window.location.pathname.replace(/admin\.html.*/, '') + link;
+        document.getElementById('testLink').href = fullUrl;
+        document.getElementById('testLink').textContent = fullUrl;
+        document.getElementById('linkDetails').innerHTML =
+          '<strong>Test Duration:</strong> ' + duration + ' minutes &nbsp;•&nbsp; ' +
+          '<strong>Link Valid For:</strong> ' + linkValidityHours + ' hours &nbsp;•&nbsp; ' +
+          '<strong>Expires:</strong> ' + new Date(expiresAt).toLocaleString() +
+          (scheduledAt ? ' &nbsp;•&nbsp; <strong>Unlocks:</strong> ' + new Date(scheduledAt).toLocaleString() : '') +
+          (synced ? '<div class="alert alert-success" style="margin-top:0.55rem;">Saved to server (Postgres).</div>' :
+            '<div class="alert alert-danger" style="margin-top:0.6rem;">Saved in this browser, but server sync failed. Candidate on another device may see Invalid Link. <button class="btn btn-outline" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="syncRecordToBackend(getAssessments().find(a=>a.id===\'' + id + '\')).then(ok=>alert(ok?\'Synced\':\'Still failed — re-login and try Restore\'))">Retry sync</button></div>');
+        if (typeof logActivity === 'function') logActivity('Assigned assessment', name + ' / ' + role + ' / ' + level);
+        document.getElementById('linkResult').style.display = 'block';
+        window.generatedLink = link;
+        window.lastCandName = name;
+        window.lastCandEmail = email;
 
-      document.getElementById('candName').value = '';
-      document.getElementById('candEmail').value = '';
-      document.getElementById('candMobile').value = '';
-      document.getElementById('scheduledAt').value = '';
-      document.getElementById('linkValidity').value = '24';
-      const freshData = getAssessment(document.getElementById('role').value, document.getElementById('level').value);
-      document.getElementById('testDuration').value = freshData ? freshData.duration : 20;
-      document.getElementById('testDuration').dataset.userEdited = '';
-      refreshAll();
+        document.getElementById('candName').value = '';
+        document.getElementById('candEmail').value = '';
+        document.getElementById('candMobile').value = '';
+        document.getElementById('scheduledAt').value = '';
+        document.getElementById('linkValidity').value = '24';
+        const freshData = getAssessment(document.getElementById('role').value, document.getElementById('level').value);
+        document.getElementById('testDuration').value = freshData ? freshData.duration : 20;
+        document.getElementById('testDuration').dataset.userEdited = '';
+        refreshAll();
+      } catch (err) {
+        console.error(err);
+        alert('Could not generate link: ' + (err && err.message ? err.message : err));
+      }
     }
 
     function copyLink() {
