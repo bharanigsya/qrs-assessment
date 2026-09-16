@@ -399,16 +399,70 @@
       renderQuestion();
     }
 
+    
+    // Safe storage — works even when sessionStorage/localStorage are blocked (sandbox)
+    const __memStore = {};
+    function storageAvailable(kind) {
+      try {
+        const s = window[kind];
+        const k = '__qrs_test__';
+        s.setItem(k, '1');
+        s.removeItem(k);
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+    const __hasLocal = storageAvailable('localStorage');
+    const __hasSession = storageAvailable('sessionStorage');
+    function ssGet(key) {
+      try {
+        if (__hasSession) return sessionStorage.getItem(key);
+      } catch (e) {}
+      return __memStore['s:' + key] != null ? __memStore['s:' + key] : null;
+    }
+    function ssSet(key, val) {
+      try {
+        if (__hasSession) { sessionStorage.setItem(key, val); return; }
+      } catch (e) {}
+      __memStore['s:' + key] = String(val);
+    }
+    function ssRemove(key) {
+      try {
+        if (__hasSession) sessionStorage.removeItem(key);
+      } catch (e) {}
+      delete __memStore['s:' + key];
+    }
+    function lsGet(key) {
+      try {
+        if (__hasLocal) return localStorage.getItem(key);
+      } catch (e) {}
+      return __memStore['l:' + key] != null ? __memStore['l:' + key] : null;
+    }
+    function lsSet(key, val) {
+      try {
+        if (__hasLocal) { localStorage.setItem(key, val); return; }
+      } catch (e) {}
+      __memStore['l:' + key] = String(val);
+    }
+    function lsRemove(key) {
+      try {
+        if (__hasLocal) localStorage.removeItem(key);
+      } catch (e) {}
+      delete __memStore['l:' + key];
+    }
+
+
     const BACKEND_BASE = ''; // TODO: if you deploy this page on Netlify (separate from the backend), set this to your Render backend URL, e.g. 'https://qrs-round2-backend.onrender.com' (no trailing slash). Leave as '' only when this page and backend.py are served from the same origin/localhost.
     let backendOverflow = false; // once local storage fills, keep sending new photos straight to backend
 
     function saveAssessment() {
-      const list = JSON.parse(localStorage.getItem('assessments') || '[]');
+      const list = JSON.parse(lsGet('assessments') || '[]');
       const idx = list.findIndex(a => a.id === assessment.id);
       if (idx === -1) return;
       list[idx] = assessment;
       try {
-        localStorage.setItem('assessments', JSON.stringify(list));
+        lsSet('assessments', JSON.stringify(list));
       } catch (e) {
         // Storage quota exceeded — trim local photo history (keep most recent few for quick admin preview)
         // and rely on the backend for the full session's worth of photos going forward.
@@ -419,7 +473,7 @@
         }
         list[idx] = assessment;
         try {
-          localStorage.setItem('assessments', JSON.stringify(list));
+          lsSet('assessments', JSON.stringify(list));
         } catch (e2) {
           console.warn('Still over quota after trimming; will keep only the latest photo locally', e2);
         }

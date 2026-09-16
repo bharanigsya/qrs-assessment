@@ -751,11 +751,65 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
     const DEFAULT_PASS = 'qrs@2026';
     const DEFAULT_COORD_USER = 'coordinator';
     const DEFAULT_COORD_PASS = 'qrs@coord';
+    
+    // Safe storage — works even when sessionStorage/localStorage are blocked (sandbox)
+    const __memStore = {};
+    function storageAvailable(kind) {
+      try {
+        const s = window[kind];
+        const k = '__qrs_test__';
+        s.setItem(k, '1');
+        s.removeItem(k);
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+    const __hasLocal = storageAvailable('localStorage');
+    const __hasSession = storageAvailable('sessionStorage');
+    function ssGet(key) {
+      try {
+        if (__hasSession) return sessionStorage.getItem(key);
+      } catch (e) {}
+      return __memStore['s:' + key] != null ? __memStore['s:' + key] : null;
+    }
+    function ssSet(key, val) {
+      try {
+        if (__hasSession) { sessionStorage.setItem(key, val); return; }
+      } catch (e) {}
+      __memStore['s:' + key] = String(val);
+    }
+    function ssRemove(key) {
+      try {
+        if (__hasSession) sessionStorage.removeItem(key);
+      } catch (e) {}
+      delete __memStore['s:' + key];
+    }
+    function lsGet(key) {
+      try {
+        if (__hasLocal) return localStorage.getItem(key);
+      } catch (e) {}
+      return __memStore['l:' + key] != null ? __memStore['l:' + key] : null;
+    }
+    function lsSet(key, val) {
+      try {
+        if (__hasLocal) { localStorage.setItem(key, val); return; }
+      } catch (e) {}
+      __memStore['l:' + key] = String(val);
+    }
+    function lsRemove(key) {
+      try {
+        if (__hasLocal) localStorage.removeItem(key);
+      } catch (e) {}
+      delete __memStore['l:' + key];
+    }
+
+
     const BACKEND_BASE = ''; // TODO: if you deploy this page on Netlify (separate from the backend), set this to your Render backend URL, e.g. 'https://qrs-round2-backend.onrender.com' (no trailing slash). Leave as '' only when this page and backend.py are served from the same origin/localhost.
 
     // ===== Session — real backend-issued & backend-verified token =====
     function authToken() {
-      return sessionStorage.getItem('qrs_admin_token') || '';
+      return ssGet('qrs_admin_token') || '';
     }
     function authHeaders(extra) {
       const headers = Object.assign({}, extra || {});
@@ -764,7 +818,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       return headers;
     }
     function currentRole() {
-      return sessionStorage.getItem('qrs_admin_role') || 'admin';
+      return ssGet('qrs_admin_role') || 'admin';
     }
 
     function isAdmin() {
@@ -797,10 +851,10 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
     // Called by any backend fetch helper when the server says our session is no longer valid
     // (expired token, or a primary admin removed this coordinator's account).
     function forceReLogin(message) {
-      sessionStorage.removeItem('qrs_admin_logged');
-      sessionStorage.removeItem('qrs_admin_role');
-      sessionStorage.removeItem('qrs_admin_user');
-      sessionStorage.removeItem('qrs_admin_token');
+      ssRemove('qrs_admin_logged');
+      ssRemove('qrs_admin_role');
+      ssRemove('qrs_admin_user');
+      ssRemove('qrs_admin_token');
       alert(message || 'Your session expired or was revoked. Please log in again.');
       location.reload();
     }
@@ -818,10 +872,10 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         });
         const data = await res.json();
         if (res.ok && data.ok) {
-          sessionStorage.setItem('qrs_admin_logged', '1');
-          sessionStorage.setItem('qrs_admin_role', data.role || 'coordinator');
-          sessionStorage.setItem('qrs_admin_user', data.user);
-          sessionStorage.setItem('qrs_admin_token', data.token);
+          ssSet('qrs_admin_logged', '1');
+          ssSet('qrs_admin_role', data.role || 'coordinator');
+          ssSet('qrs_admin_user', data.user);
+          ssSet('qrs_admin_token', data.token);
           document.getElementById('loginPass').value = '';
           showApp();
           applyRoleUI();
@@ -910,10 +964,10 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
     }
 
     function doLogout() {
-      sessionStorage.removeItem('qrs_admin_logged');
-      sessionStorage.removeItem('qrs_admin_role');
-      sessionStorage.removeItem('qrs_admin_user');
-      sessionStorage.removeItem('qrs_admin_token');
+      ssRemove('qrs_admin_logged');
+      ssRemove('qrs_admin_role');
+      ssRemove('qrs_admin_user');
+      ssRemove('qrs_admin_token');
       location.reload();
     }
 
@@ -928,7 +982,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       refreshAll();
     }
 
-    if (sessionStorage.getItem('qrs_admin_logged') === '1') showApp();
+    if (ssGet('qrs_admin_logged') === '1') showApp();
 
     document.getElementById('loginPass').addEventListener('keydown', e => {
       if (e.key === 'Enter') doLogin();
@@ -957,17 +1011,17 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       if (name === 'bulk') document.getElementById('bulkResults').innerHTML = '';
       if (name === 'similarity') document.getElementById('simResults').innerHTML = '<p style="color:#64748b;font-size:0.9rem;">Select a role & level and click "Run Check".</p>';
       if (name === 'settings') {
-        const pm = localStorage.getItem('qrs_pass_mark') || '60';
+        const pm = lsGet('qrs_pass_mark') || '60';
         const el = document.getElementById('passMark');
         if (el) el.value = pm;
       }
     }
 
     function getAssessments() {
-      return JSON.parse(localStorage.getItem('assessments') || '[]');
+      return JSON.parse(lsGet('assessments') || '[]');
     }
     function saveAssessments(list) {
-      localStorage.setItem('assessments', JSON.stringify(list));
+      lsSet('assessments', JSON.stringify(list));
       // Push every record to the backend so candidates on other devices can find it,
       // and so this admin can see results they submit from elsewhere.
       return Promise.all(list.map(syncRecordToBackend));
@@ -1067,7 +1121,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         } catch (e) { fail++; }
       }
       alert('Restore done.\nUploaded: ' + ok + (fail ? ('\nFailed: ' + fail) : ''));
-      sessionStorage.removeItem('qrs_auto_restore_tried');
+      ssRemove('qrs_auto_restore_tried');
       await pullFromBackend();
       refreshAll();
     }
@@ -1092,8 +1146,8 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
               '<button class="btn btn-outline" style="padding:0.35rem 0.8rem;margin:0.25rem 0;" onclick="document.getElementById(\'dataLossWarning\').style.display=\'none\'">Dismiss</button></div>';
           }
           // Keep richer local data; push local → server once per session
-          if (!sessionStorage.getItem('qrs_auto_restore_tried')) {
-            sessionStorage.setItem('qrs_auto_restore_tried', '1');
+          if (!ssGet('qrs_auto_restore_tried')) {
+            ssSet('qrs_auto_restore_tried', '1');
             for (const rec of local) {
               try {
                 const { photoHistory, videoHistory, ...payload } = rec;
@@ -1109,7 +1163,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
           const byId = {};
           local.forEach(a => { byId[a.id] = a; });
           remote.forEach(r => { byId[r.id] = preferAssessment(byId[r.id], r); });
-          localStorage.setItem('assessments', JSON.stringify(Object.values(byId)));
+          lsSet('assessments', JSON.stringify(Object.values(byId)));
           return;
         }
 
@@ -1119,7 +1173,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         const byId = {};
         local.forEach(a => { byId[a.id] = a; });
         remote.forEach(r => { byId[r.id] = preferAssessment(byId[r.id], r); });
-        localStorage.setItem('assessments', JSON.stringify(Object.values(byId)));
+        lsSet('assessments', JSON.stringify(Object.values(byId)));
       } catch (e) {
         console.warn('Backend pull failed (backend may not be running):', e);
       }
@@ -1147,22 +1201,22 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
     // ===== Activity log =====
     function logActivity(action, detail) {
       try {
-        const logs = JSON.parse(localStorage.getItem('qrs_activity_log') || '[]');
+        const logs = JSON.parse(lsGet('qrs_activity_log') || '[]');
         logs.unshift({
           at: new Date().toISOString(),
-          user: sessionStorage.getItem('qrs_admin_user') || 'unknown',
-          role: sessionStorage.getItem('qrs_admin_role') || 'unknown',
+          user: ssGet('qrs_admin_user') || 'unknown',
+          role: ssGet('qrs_admin_role') || 'unknown',
           action: action,
           detail: detail || ''
         });
-        localStorage.setItem('qrs_activity_log', JSON.stringify(logs.slice(0, 300)));
+        lsSet('qrs_activity_log', JSON.stringify(logs.slice(0, 300)));
       } catch (e) {}
     }
 
     function renderActivityLog() {
       const el = document.getElementById('activityLogList');
       if (!el) return;
-      const logs = JSON.parse(localStorage.getItem('qrs_activity_log') || '[]');
+      const logs = JSON.parse(lsGet('qrs_activity_log') || '[]');
       if (!logs.length) {
         el.innerHTML = '<p style="color:#94a3b8;">No activity yet.</p>';
         return;
@@ -1177,7 +1231,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
     function clearActivityLog() {
       if (!isAdmin()) return;
       if (!confirm('Clear activity log?')) return;
-      localStorage.removeItem('qrs_activity_log');
+      lsRemove('qrs_activity_log');
       renderActivityLog();
     }
 
@@ -1186,7 +1240,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
 
     function getCoordRoleLocks() {
       try {
-        const x = JSON.parse(localStorage.getItem('qrs_coord_roles') || 'null');
+        const x = JSON.parse(lsGet('qrs_coord_roles') || 'null');
         if (Array.isArray(x) && x.length) return x;
       } catch (e) {}
       return ALL_ROLES.slice();
@@ -1206,7 +1260,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       if (!isAdmin()) return;
       const allowed = Array.from(document.querySelectorAll('.coord-role-cb:checked')).map(c => c.value);
       if (!allowed.length) return alert('Select at least one role');
-      localStorage.setItem('qrs_coord_roles', JSON.stringify(allowed));
+      lsSet('qrs_coord_roles', JSON.stringify(allowed));
       logActivity('Updated coordinator role locks', allowed.join(', '));
       applyCoordRoleOptions();
       alert('Coordinator role locks saved');
@@ -1258,7 +1312,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         } catch (e) { console.warn('Backend delete failed for', id, e); }
       }
       let list = getAssessments().filter(a => !ids.includes(a.id));
-      localStorage.setItem('assessments', JSON.stringify(list));
+      lsSet('assessments', JSON.stringify(list));
       logActivity('Bulk delete', ids.length + ' candidates');
       refreshAll();
       alert('Deleted ' + ids.length + ' candidates');
@@ -1400,7 +1454,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         const list = getAssessments();
         list.unshift(record);
         // Save locally first so the link always works on this browser
-        localStorage.setItem('assessments', JSON.stringify(list));
+        lsSet('assessments', JSON.stringify(list));
         // Sync ONLY the new record (not all candidates) — avoids hang/timeout
         let synced = false;
         try {
@@ -1533,12 +1587,12 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
 
 
     function getPassMark() {
-      return parseInt(localStorage.getItem('qrs_pass_mark') || '60', 10);
+      return parseInt(lsGet('qrs_pass_mark') || '60', 10);
     }
     function savePassMark() {
       const v = parseInt(document.getElementById('passMark').value, 10);
       if (isNaN(v) || v < 1 || v > 100) return alert('Enter a number between 1 and 100');
-      localStorage.setItem('qrs_pass_mark', String(v));
+      lsSet('qrs_pass_mark', String(v));
       alert('Pass mark saved: ' + v);
       refreshAll();
     }
@@ -1784,12 +1838,12 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
     }
 
     function soundAlertsEnabled() {
-      return localStorage.getItem('qrs_sound_alerts') !== 'off';
+      return lsGet('qrs_sound_alerts') !== 'off';
     }
 
     function toggleSoundAlerts() {
       const on = soundAlertsEnabled();
-      localStorage.setItem('qrs_sound_alerts', on ? 'off' : 'on');
+      lsSet('qrs_sound_alerts', on ? 'off' : 'on');
       updateSoundAlertBtn();
       if (!on) playAlertBeep(); // quick confirmation beep when turning on
     }
@@ -1915,7 +1969,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       list[idx].expiresAt = exp ? new Date(exp).toISOString() : list[idx].expiresAt;
       list[idx].statusNote = (document.getElementById('editStatusNote').value || '').trim();
       list[idx].statusUpdatedAt = new Date().toISOString();
-      list[idx].statusUpdatedBy = sessionStorage.getItem('qrs_admin_user') || 'admin';
+      list[idx].statusUpdatedBy = ssGet('qrs_admin_user') || 'admin';
       saveAssessments(list);
       if (typeof logActivity === 'function') logActivity('Edited status/schedule', list[idx].name + ' → ' + st);
       document.getElementById('inlineEditPanel').style.display = 'none';
@@ -1957,7 +2011,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       if (!el) return;
       const key = 'qrs_last_backup_date';
       const today = new Date().toISOString().slice(0, 10);
-      const last = localStorage.getItem(key) || '';
+      const last = lsGet(key) || '';
       if (last !== today) {
         el.style.display = 'block';
         el.innerHTML = '<strong>Backup reminder:</strong> You have not downloaded a backup today. Click Backup JSON in Results or below.';
@@ -1967,7 +2021,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
     }
 
     function markBackupDone() {
-      localStorage.setItem('qrs_last_backup_date', new Date().toISOString().slice(0, 10));
+      lsSet('qrs_last_backup_date', new Date().toISOString().slice(0, 10));
       updateBackupReminder();
     }
 
@@ -2095,33 +2149,39 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
 
     function printReport(id) {
       const a = getAssessments().find(x => x.id === id);
-      if (!a) return;
-      const pass = getPassMark();
-      const total = totalScore(a);
+      if (!a) return alert('Candidate not found');
+      const pass = typeof getPassMark === 'function' ? getPassMark() : 60;
+      const total = typeof totalScore === 'function' ? totalScore(a) : (a.score != null ? a.score : 0);
       const result = (a.score !== null && total >= pass) ? 'PASS' : (a.score !== null ? 'FAIL' : 'PENDING');
-      const w = window.open('', '_blank');
-      w.document.write('<html><head><title>Report - ' + a.name + '</title><style>body{font-family:Inter,sans-serif;padding:2rem;color:#0f172a;} h1{font-size:1.4rem;} table{border-collapse:collapse;width:100%;margin-top:1rem;} td,th{border:1px solid #e2e8f0;padding:0.5rem;text-align:left;} .pass{color:#065f46;font-weight:700;} .fail{color:#991b1b;font-weight:700;}</style></head><body>');
-      w.document.write('<img src="qrs-logo.png" style="height:40px;"><h1>QRS Second Round Assessment Report</h1>');
-      w.document.write('<table><tr><th>Candidate</th><td>' + a.name + '</td></tr>');
-      w.document.write('<tr><th>Email</th><td>' + a.email + '</td></tr>');
-      w.document.write('<tr><th>Role / Level</th><td>' + a.role + ' / ' + a.level + '</td></tr>');
-      w.document.write('<tr><th>Status</th><td>' + a.status + '</td></tr>');
+      const w = window.open('', '_blank', 'noopener,noreferrer');
+      if (!w) {
+        alert('Pop-up blocked. Allow pop-ups for this site to print reports.');
+        return;
+      }
+      const esc = (s) => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+      w.document.open();
+      w.document.write('<!DOCTYPE html><html><head><title>Report - ' + esc(a.name) + '</title><style>body{font-family:Inter,sans-serif;padding:2rem;color:#0f172a;} h1{font-size:1.4rem;} table{border-collapse:collapse;width:100%;margin-top:1rem;} td,th{border:1px solid #e2e8f0;padding:0.5rem;text-align:left;} .pass{color:#065f46;font-weight:700;} .fail{color:#991b1b;font-weight:700;}</style></head><body>');
+      w.document.write('<h1>QRS Second Round Assessment Report</h1>');
+      w.document.write('<table><tr><th>Candidate</th><td>' + esc(a.name) + '</td></tr>');
+      w.document.write('<tr><th>Email</th><td>' + esc(a.email) + '</td></tr>');
+      w.document.write('<tr><th>Role / Level</th><td>' + esc(a.role) + ' / ' + esc(a.level) + '</td></tr>');
+      w.document.write('<tr><th>Status</th><td>' + esc(a.status) + '</td></tr>');
       w.document.write('<tr><th>MCQ Score</th><td>' + (a.score !== null ? a.score : '—') + '</td></tr>');
       w.document.write('<tr><th>Voice Score</th><td>' + (a.voiceScore !== undefined ? a.voiceScore : '—') + '</td></tr>');
       w.document.write('<tr><th>Total</th><td>' + total + ' / 100</td></tr>');
       w.document.write('<tr><th>Pass Mark</th><td>' + pass + '</td></tr>');
       w.document.write('<tr><th>Result</th><td class="' + (result==='PASS'?'pass':'fail') + '">' + result + '</td></tr>');
       w.document.write('<tr><th>Flags</th><td>' + (a.flags ? a.flags.length : 0) + '</td></tr>');
-      w.document.write('<tr><th>Created</th><td>' + new Date(a.createdAt).toLocaleString() + '</td></tr>');
+      w.document.write('<tr><th>Created</th><td>' + (a.createdAt ? new Date(a.createdAt).toLocaleString() : '—') + '</td></tr>');
       w.document.write('<tr><th>Completed</th><td>' + (a.completedAt ? new Date(a.completedAt).toLocaleString() : '—') + '</td></tr></table>');
       if (a.flags && a.flags.length) {
-        w.document.write('<h3>Flag details</h3><ul>' + a.flags.map(f => '<li>' + f.reason + ' (' + new Date(f.time).toLocaleString() + ')</li>').join('') + '</ul>');
+        w.document.write('<h3>Flag details</h3><ul>' + a.flags.map(f => '<li>' + esc(f.reason) + ' (' + new Date(f.time).toLocaleString() + ')</li>').join('') + '</ul>');
       }
       w.document.write('<p style="margin-top:2rem;color:#64748b;font-size:0.85rem;">Generated by QRS Assessment System</p>');
+      w.document.write('<p><button onclick="window.print()" style="padding:0.5rem 1rem;background:#4f46e5;color:#fff;border:0;border-radius:8px;cursor:pointer;">Print / Save PDF</button></p>');
       w.document.write('</body></html>');
       w.document.close();
-      w.focus();
-      setTimeout(function(){ w.print(); }, 400);
+      try { w.focus(); } catch(e) {}
     }
 
     function printProctorReport(id) {
@@ -2138,7 +2198,8 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         sample = [];
         for (let i = 0; i < MAX_PHOTOS_SHOWN; i++) sample.push(photos[Math.floor(i * step)]);
       }
-      const w = window.open('', '_blank');
+      const w = window.open('', '_blank', 'noopener,noreferrer');
+      if (!w) return alert('Pop-up blocked. Allow pop-ups for this site.');
       w.document.write('<html><head><title>Proctoring Record - ' + a.name + '</title><style>' +
         'body{font-family:Inter,sans-serif;padding:2rem;color:#0f172a;} h1{font-size:1.3rem;margin-bottom:0.2rem;} h3{margin-top:1.5rem;}' +
         'table{border-collapse:collapse;width:100%;margin-top:0.6rem;} td,th{border:1px solid #e2e8f0;padding:0.45rem 0.6rem;text-align:left;font-size:0.88rem;}' +
@@ -2368,50 +2429,57 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
     // immediately (clears any past schedule), fresh 24h expiry — without losing
     // their existing history (status/answers/flags/photos stay attached to this record).
     async function resendLink(id) {
-      const list = getAssessments();
-      const idx = list.findIndex(a => a.id === id);
-      if (idx === -1) return;
+      try {
+        const list = getAssessments();
+        const idx = list.findIndex(a => a.id === id);
+        if (idx === -1) return alert('Candidate not found');
 
-      const a = list[idx];
-      const newToken = Math.random().toString(36).substring(2, 12);
-      a.token = newToken;
-      // Keep existing schedule if set — use Edit on Results to change times without new email.
-      // Only refresh expiry window from now if no future schedule remains.
-      a.linkValidityHours = a.linkValidityHours || 24;
-      const now = Date.now();
-      if (a.scheduledAt && new Date(a.scheduledAt).getTime() > now) {
-        a.linkValidFrom = a.scheduledAt;
-        a.expiresAt = new Date(new Date(a.scheduledAt).getTime() + a.linkValidityHours * 60 * 60 * 1000).toISOString();
-      } else {
-        a.linkValidFrom = new Date().toISOString();
-        a.expiresAt = new Date(now + a.linkValidityHours * 60 * 60 * 1000).toISOString();
+        const a = list[idx];
+        const newToken = Math.random().toString(36).substring(2, 12);
+        a.token = newToken;
+        a.linkValidityHours = a.linkValidityHours || 24;
+        const now = Date.now();
+        if (a.scheduledAt && new Date(a.scheduledAt).getTime() > now) {
+          a.linkValidFrom = a.scheduledAt;
+          a.expiresAt = new Date(new Date(a.scheduledAt).getTime() + a.linkValidityHours * 60 * 60 * 1000).toISOString();
+        } else {
+          a.linkValidFrom = new Date().toISOString();
+          a.expiresAt = new Date(now + a.linkValidityHours * 60 * 60 * 1000).toISOString();
+        }
+        if (a.status !== 'completed' && a.status !== 'missed' && a.status !== 'expired') a.status = 'pending';
+
+        list[idx] = a;
+        lsSet('assessments', JSON.stringify(list));
+        let synced = false;
+        try { synced = await syncRecordToBackend(a); } catch (e) { synced = false; }
+
+        const link = 'test.html?id=' + a.id + '&token=' + newToken;
+        const fullUrl = window.location.origin + window.location.pathname.replace(/admin\.html.*/, '') + link;
+        window.generatedLink = link;
+        window.lastCandName = a.name;
+        window.lastCandEmail = a.email;
+
+        let box = document.getElementById('resendResult-' + id);
+        if (!box) {
+          box = document.createElement('div');
+          box.id = 'resendResult-' + id;
+          box.style.marginTop = '0.8rem';
+          const content = document.getElementById('detailContent');
+          if (content) content.appendChild(box);
+        }
+        box.innerHTML =
+          '<div class="alert alert-success">' +
+          '<strong>New link generated' + (synced ? ' and saved to server' : ' (saved in browser — server sync failed)') + '</strong>' +
+          '<div style="margin:0.5rem 0;word-break:break-all;"><a href="' + fullUrl + '" target="_blank" style="color:#4f46e5;">' + fullUrl + '</a></div>' +
+          '<button class="btn btn-success" style="padding:0.35rem 0.75rem;font-size:0.85rem;" onclick="navigator.clipboard.writeText(\'' + fullUrl.replace(/'/g, "\\'") + '\').then(function(){alert(\'Copied\')})">Copy Link</button>' +
+          '</div>';
+        if (typeof showToast === 'function') showToast('New link ready');
+        else alert('New link ready — see below');
+      } catch (err) {
+        console.error(err);
+        alert('Resend failed: ' + (err.message || err));
       }
-      if (a.status !== 'completed' && a.status !== 'missed' && a.status !== 'expired') a.status = 'pending';
-
-      list[idx] = a;
-      const syncResults = await saveAssessments(list); // writes locally AND pushes to backend
-      const synced = syncResults[idx];
-
-      const link = 'test.html?id=' + a.id + '&token=' + newToken;
-      const fullUrl = window.location.origin + window.location.pathname.replace(/admin\.html.*/, '') + link;
-      window.generatedLink = link;
-      window.lastCandName = a.name;
-      window.lastCandEmail = a.email;
-
-      document.getElementById('resendResult-' + id).innerHTML =
-        '<div class="alert alert-success">' +
-        '<strong>New link generated — open now, valid for 24 hours.</strong>' +
-        '<div style="margin:0.5rem 0;word-break:break-all;"><a href="' + fullUrl + '" target="_blank" style="color:#4f46e5;">' + fullUrl + '</a></div>' +
-        '<div style="display:flex;gap:0.5rem;flex-wrap:wrap;">' +
-        '<button class="btn btn-success" style="padding:0.35rem 0.75rem;font-size:0.85rem;" onclick="copyLink()">Copy Link</button>' +
-        '<button class="btn btn-outline" style="padding:0.35rem 0.75rem;font-size:0.85rem;" onclick="emailLink()">Email Link</button>' +
-        '</div></div>' +
-        (synced ? '' : '<div class="alert alert-danger" style="margin-top:0.5rem;">⚠️ Could not reach the backend just now — this link may show "Invalid or Expired Link" if opened on another device. <button class="btn btn-outline" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="testBackendConnection()">Test connection</button></div>');
-
-      refreshAll();
     }
-
-
 
     // ========== Full-screen Proctor Photo Viewer ==========
     function openPhotoViewer(src, caption) {
@@ -2529,20 +2597,27 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
       }
     }
 
-    function replyHelp(id) {
-      const text = (document.getElementById('adminHelpReply') && document.getElementById('adminHelpReply').value || '').trim();
-      if (!text) return alert('Write a reply');
-      const list = getAssessments();
-      const idx = list.findIndex(x => x.id === id);
-      if (idx < 0) return;
-      if (!list[idx].helpMessages) list[idx].helpMessages = [];
-      list[idx].helpMessages.push({ from: 'admin', text: text.slice(0,500), at: new Date().toISOString() });
-      list[idx].helpUnreadAdmin = false;
-      list[idx].helpUnreadCandidate = true;
-      saveAssessments(list);
-      if (typeof logActivity === 'function') logActivity('Help reply', list[idx].name);
-      viewDetail(id);
-      refreshAll();
+    async function replyHelp(id) {
+      try {
+        const text = (document.getElementById('adminHelpReply') && document.getElementById('adminHelpReply').value || '').trim();
+        if (!text) return alert('Write a reply');
+        const list = getAssessments();
+        const idx = list.findIndex(x => x.id === id);
+        if (idx < 0) return alert('Candidate not found');
+        if (!list[idx].helpMessages) list[idx].helpMessages = [];
+        list[idx].helpMessages.push({ from: 'admin', text: text.slice(0,500), at: new Date().toISOString() });
+        list[idx].helpUnreadAdmin = false;
+        list[idx].helpUnreadCandidate = true;
+        lsSet('assessments', JSON.stringify(list));
+        try { await syncRecordToBackend(list[idx]); } catch (e) {}
+        if (typeof logActivity === 'function') logActivity('Help reply', list[idx].name);
+        if (typeof showToast === 'function') showToast('Reply sent');
+        else alert('Reply sent');
+        viewDetail(id);
+        refreshAll();
+      } catch (err) {
+        alert('Reply failed: ' + (err.message || err));
+      }
     }
 
     async function clearCandidateMedia(id) {
@@ -2554,10 +2629,9 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
           headers: authHeaders()
         });
         if (res.status === 401) { forceReLogin(); return; }
-        if (!res.ok) { alert('Could not clear media'); return; }
+        // continue even if API missing — still clear local
       } catch (e) {
-        alert('Backend error');
-        return;
+        console.warn('clear media API', e);
       }
       const list = getAssessments();
       const idx = list.findIndex(x => x.id === id);
@@ -2567,7 +2641,8 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
         list[idx].lastPhoto = null;
         list[idx].lastPhotoAt = null;
         list[idx].lastVideoAt = null;
-        localStorage.setItem('assessments', JSON.stringify(list));
+        lsSet('assessments', JSON.stringify(list));
+        try { await syncRecordToBackend(list[idx]); } catch (e) {}
       }
       alert('Media cleared. Record kept.');
       viewDetail(id);
@@ -2596,7 +2671,7 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
         console.warn('Backend delete failed (backend may not be running):', e);
       }
       const next = list.filter(x => x.id !== id);
-      localStorage.setItem('assessments', JSON.stringify(next));
+      lsSet('assessments', JSON.stringify(next));
       const modal = document.getElementById('detailModal');
       if (modal) modal.classList.remove('show');
       refreshAll();
@@ -2608,7 +2683,7 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
       if (!isAdmin()) return alert('Only Admin can clear data');
       if (!confirm('Delete ALL assessment data?')) return;
       if (!confirm('Final confirmation?')) return;
-      localStorage.removeItem('assessments');
+      lsRemove('assessments');
       refreshAll();
       alert('All data cleared');
     }
@@ -2819,12 +2894,12 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
 
     function toggleTheme() {
       const dark = document.body.classList.toggle('theme-dark');
-      localStorage.setItem('qrs_theme', dark ? 'dark' : 'light');
+      lsSet('qrs_theme', dark ? 'dark' : 'light');
       showToast(dark ? 'Dark theme on' : 'Light theme on');
     }
 
     function applySavedTheme() {
-      if (localStorage.getItem('qrs_theme') === 'dark') {
+      if (lsGet('qrs_theme') === 'dark') {
         document.body.classList.add('theme-dark');
       }
     }
@@ -2890,7 +2965,7 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
     }
 
     setInterval(async function() {
-      if (sessionStorage.getItem('qrs_admin_logged') === '1') {
+      if (ssGet('qrs_admin_logged') === '1') {
         await pullFromBackend();
         refreshAll();
       }
