@@ -1572,12 +1572,12 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       document.getElementById('recentTable').innerHTML = recent.length ? recent.map(a =>
         '<tr><td><strong>' + a.name + '</strong><br><small style="color:#64748b">' + a.email + '</small></td>' +
         '<td>' + a.role + '</td><td><span class="badge badge-' + a.level + '">' + a.level + '</span></td>' +
-        '<td>' + statusBadge(a.status) + '</td><td>' + (a.score !== null ? a.score + '/100' : '—') + '</td>' +
+        '<td>' + statusBadge(a.status, a) + '</td><td>' + (a.score !== null ? a.score + '/100' : '—') + '</td>' +
         '<td>' + (a.flags ? a.flags.length : 0) + '</td><td>' + new Date(a.createdAt).toLocaleDateString() + '</td></tr>'
       ).join('') : '<tr><td colspan="7" style="text-align:center;color:#94a3b8;">No assessments yet</td></tr>';
     }
 
-    function statusBadge(s) {
+    function statusBadge(s, rec) {
       const map = {
         pending: '<span class="badge" style="background:#e2e8f0;color:#475569;">Pending</span>',
         'in-progress': '<span class="badge" style="background:#fef3c7;color:#b45309;">In Progress</span>',
@@ -1586,7 +1586,11 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         missed: '<span class="badge" style="background:#ffedd5;color:#c2410c;">Missed</span>',
         expired: '<span class="badge" style="background:#fce7f3;color:#9d174d;">Link Expired</span>'
       };
-      return map[s] || s;
+      let html = map[s] || s;
+      if (rec && rec.lastResentAt && (s === 'pending' || s === 'expired')) {
+        html += ' <span class="badge" style="background:#eef2ff;color:#3730a3;" title="Resent ' + new Date(rec.lastResentAt).toLocaleString() + '">Resent</span>';
+      }
+      return html;
     }
 
 
@@ -2080,7 +2084,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         (isAdmin() ? '<td><input type="checkbox" class="result-select" value="' + a.id + '"></td>' : '<td></td>') +
         '<td><strong>' + a.name + '</strong><br><small style="color:#64748b">' + a.email + '</small></td>' +
         '<td>' + a.role + '</td><td><span class="badge badge-' + a.level + '">' + a.level + '</span></td>' +
-        '<td>' + statusBadge(a.status) + (a.statusNote ? '<br><small style="color:#9a3412;">' + a.statusNote + '</small>' : '') + (a.status === 'expired' && a.expiresAt ? '<br><small style="color:#9d174d;">Exp: ' + new Date(a.expiresAt).toLocaleString() + '</small>' : '') + (a.status === 'missed' ? '<br><small style="color:#c2410c;">Did not attend</small>' : '') + '</td><td>' + (a.score !== null ? '<strong>' + a.score + '</strong>/100' : '—') + '</td>' +
+        '<td>' + statusBadge(a.status, a) + (a.statusNote ? '<br><small style="color:#9a3412;">' + a.statusNote + '</small>' : '') + (a.status === 'expired' && a.expiresAt ? '<br><small style="color:#9d174d;">Exp: ' + new Date(a.expiresAt).toLocaleString() + '</small>' : '') + (a.status === 'missed' ? '<br><small style="color:#c2410c;">Did not attend</small>' : '') + '</td><td>' + (a.score !== null ? '<strong>' + a.score + '</strong>/100' : '—') + '</td>' +
         '<td>' + resultBadge(a) + '</td>' +
         '<td>' + (a.flags && a.flags.length ? '<span class="flag-count">' + a.flags.length + ' 🚩</span>' : '0') + '</td>' +
         '<td><select style="font-size:0.75rem;padding:0.2rem;max-width:100px;" onchange="setCandidateTag(\'' + a.id + '\', this.value)">' +
@@ -2302,7 +2306,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         '<div class="detail-row"><span>Email</span><span>' + a.email + '</span></div>' +
         '<div class="detail-row"><span>Mobile</span><span>' + (a.mobile || '—') + '</span></div>' +
         '<div class="detail-row"><span>Role / Level</span><span>' + a.role + ' / ' + a.level + '</span></div>' +
-        '<div class="detail-row"><span>Status</span><span>' + statusBadge(a.status) + (a.statusNote ? ' — ' + a.statusNote : '') + '</span></div>' +
+        '<div class="detail-row"><span>Status</span><span>' + statusBadge(a.status, a) + (a.statusNote ? ' — ' + a.statusNote : '') + '</span></div>' +
         '<div class="detail-row"><span>MCQ Score</span><strong>' + (a.score !== null ? a.score + ' / 100' : 'Not submitted') + '</strong></div>' +
         '<div class="detail-row"><span>Voice Score</span><strong>' + (a.voiceScore !== undefined ? a.voiceScore : 'Not scored') + '</strong></div>' +
         '<div class="detail-row"><span>Total / Result</span><strong>' + totalScore(a) + ' · ' + (a.score !== null ? (totalScore(a) >= getPassMark() ? 'PASS' : 'FAIL') : '—') + '</strong></div>' +
@@ -2450,7 +2454,11 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
           a.linkValidFrom = new Date().toISOString();
           a.expiresAt = new Date(now + a.linkValidityHours * 60 * 60 * 1000).toISOString();
         }
-        if (a.status !== 'completed' && a.status !== 'missed' && a.status !== 'expired') a.status = 'pending';
+        // Resend always re-opens the link for the candidate
+        if (a.status === 'expired' || a.status === 'missed') a.status = 'pending';
+        else if (a.status !== 'completed') a.status = 'pending';
+        a.lastResentAt = new Date().toISOString();
+        a.statusNote = (a.statusNote ? a.statusNote + ' · ' : '') + 'Link resent ' + new Date().toLocaleString();
 
         list[idx] = a;
         lsSet('assessments', JSON.stringify(list));
@@ -2489,6 +2497,9 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
           '</div>';
         if (typeof showToast === 'function') showToast('New link ready');
         else alert('New link ready — see below');
+        refreshAll();
+        // keep detail open with updated status
+        try { viewDetail(id); } catch (e) {}
       } catch (err) {
         console.error(err);
         alert('Resend failed: ' + (err.message || err));
@@ -2850,7 +2861,7 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
       if (badge) badge.style.display = (a.status === 'in-progress') ? '' : 'none';
 
       let html = '<div style="font-size:0.85rem;color:var(--muted);margin-bottom:0.7rem;">' +
-        'Status: ' + statusBadge(a.status) + ' · Elapsed: ' + fmtElapsed(a.startedAt) +
+        'Status: ' + statusBadge(a.status, a) + ' · Elapsed: ' + fmtElapsed(a.startedAt) +
         ' · Flags: ' + (a.flags ? a.flags.length : 0) + '</div>';
 
       const prog = candidateProgress(a);
