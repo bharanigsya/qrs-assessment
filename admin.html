@@ -1468,11 +1468,15 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         const fullUrl = window.location.origin + window.location.pathname.replace(/admin\.html.*/, '') + link;
         document.getElementById('testLink').href = fullUrl;
         document.getElementById('testLink').textContent = fullUrl;
+        const unlockText = scheduledAt ? new Date(scheduledAt).toLocaleString() : 'Available immediately (no schedule lock)';
         document.getElementById('linkDetails').innerHTML =
-          '<strong>Test Duration:</strong> ' + duration + ' minutes &nbsp;•&nbsp; ' +
-          '<strong>Link Valid For:</strong> ' + linkValidityHours + ' hours &nbsp;•&nbsp; ' +
-          '<strong>Expires:</strong> ' + new Date(expiresAt).toLocaleString() +
-          (scheduledAt ? ' &nbsp;•&nbsp; <strong>Unlocks:</strong> ' + new Date(scheduledAt).toLocaleString() : '') +
+          '<div style="margin-top:0.65rem;padding:0.85rem 1rem;background:#eef2ff;border:1px solid #c7d2fe;border-radius:12px;font-size:0.9rem;line-height:1.55;">' +
+          '<div style="font-weight:700;margin-bottom:0.4rem;color:#3730a3;">Link timing</div>' +
+          '<div><strong>Unlocks (candidate can start):</strong> ' + unlockText + '</div>' +
+          '<div><strong>Expires (link stops working):</strong> ' + new Date(expiresAt).toLocaleString() + '</div>' +
+          '<div><strong>Valid for:</strong> ' + linkValidityHours + ' hour(s) from ' + (scheduledAt ? 'scheduled start' : 'now') + '</div>' +
+          '<div><strong>Test duration:</strong> ' + duration + ' minutes (timer inside exam)</div>' +
+          '</div>' +
           (synced ? '<div class="alert alert-success" style="margin-top:0.55rem;">Saved to server (Postgres).</div>' :
             '<div class="alert alert-danger" style="margin-top:0.6rem;">Saved in this browser, but server sync failed. Candidate on another device may see Invalid Link. <button class="btn btn-outline" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="syncRecordToBackend(getAssessments().find(a=>a.id===\'' + id + '\')).then(ok=>alert(ok?\'Synced\':\'Still failed — re-login and try Restore\'))">Retry sync</button></div>');
         if (typeof logActivity === 'function') logActivity('Assigned assessment', name + ' / ' + role + ' / ' + level);
@@ -2467,10 +2471,20 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
           const content = document.getElementById('detailContent');
           if (content) content.appendChild(box);
         }
+        const unlockLabel = (a.scheduledAt && new Date(a.scheduledAt).getTime() > Date.now())
+          ? new Date(a.scheduledAt).toLocaleString()
+          : 'Available immediately';
         box.innerHTML =
           '<div class="alert alert-success">' +
           '<strong>New link generated' + (synced ? ' and saved to server' : ' (saved in browser — server sync failed)') + '</strong>' +
           '<div style="margin:0.5rem 0;word-break:break-all;"><a href="' + fullUrl + '" target="_blank" style="color:#4f46e5;">' + fullUrl + '</a></div>' +
+          '<div style="margin:0.65rem 0;padding:0.75rem 0.9rem;background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;color:#1e293b;font-size:0.88rem;line-height:1.55;">' +
+          '<div style="font-weight:700;color:#3730a3;margin-bottom:0.35rem;">Link timing</div>' +
+          '<div><strong>Unlocks:</strong> ' + unlockLabel + '</div>' +
+          '<div><strong>Expires:</strong> ' + (a.expiresAt ? new Date(a.expiresAt).toLocaleString() : '—') + '</div>' +
+          '<div><strong>Valid for:</strong> ' + (a.linkValidityHours || 24) + ' hour(s)</div>' +
+          '<div><strong>Test duration:</strong> ' + (a.duration || '—') + ' minutes</div>' +
+          '</div>' +
           '<button class="btn btn-success" style="padding:0.35rem 0.75rem;font-size:0.85rem;" onclick="navigator.clipboard.writeText(\'' + fullUrl.replace(/'/g, "\\'") + '\').then(function(){alert(\'Copied\')})">Copy Link</button>' +
           '</div>';
         if (typeof showToast === 'function') showToast('New link ready');
