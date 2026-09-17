@@ -550,3 +550,5 @@ body.theme-dark .toast { background: #e2e8f0; color: #0f172a; }
   .header, .tabs, .logout-btn, .theme-toggle, .btn, .filter-bar, #helpUnreadBadge { display: none !important; }
   .card { box-shadow: none; border: 1px solid #ccc; }
 }
+
+.admin-shell .tabs { background: var(--card); padding: 0.55rem; border-radius: 999px; border: 1px solid var(--border); box-shadow: var(--shadow); }

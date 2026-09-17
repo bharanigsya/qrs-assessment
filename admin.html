@@ -200,6 +200,33 @@
       font-size: .82rem;
       white-space: nowrap;
     }
+  
+    /* Row action 3-dot menu */
+    .row-actions { position: relative; display: inline-flex; align-items: center; gap: 0.35rem; }
+    .menu-dots {
+      width: 34px; height: 34px; border-radius: 10px; border: 1px solid #e2e8f0;
+      background: #fff; cursor: pointer; font-size: 1.15rem; line-height: 1;
+      color: #334155; display: inline-flex; align-items: center; justify-content: center;
+    }
+    .menu-dots:hover, .menu-dots.open { background: #eef2ff; border-color: #c7d2fe; color: #4f46e5; }
+    .action-menu {
+      display: none; position: absolute; right: 0; top: 100%; margin-top: 4px;
+      min-width: 200px; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+      box-shadow: 0 12px 32px rgba(15,23,42,0.14); z-index: 50; padding: 0.35rem;
+    }
+    .action-menu.show { display: block; }
+    .action-menu button {
+      display: block; width: 100%; text-align: left; border: none; background: transparent;
+      padding: 0.55rem 0.75rem; border-radius: 8px; font-size: 0.86rem; cursor: pointer; color: #0f172a;
+    }
+    .action-menu button:hover { background: #f1f5f9; }
+    .action-menu button.danger { color: #dc2626; }
+    .action-menu .sep { height: 1px; background: #f1f5f9; margin: 0.25rem 0; }
+    body.theme-dark .menu-dots { background: #111827; border-color: #1f2937; color: #e5e7eb; }
+    body.theme-dark .action-menu { background: #111827; border-color: #1f2937; }
+    body.theme-dark .action-menu button { color: #e5e7eb; }
+    body.theme-dark .action-menu button:hover { background: #1f2937; }
+
   </style>
 </head>
 <body>
@@ -236,7 +263,7 @@
         <div class="logo">
           <img src="qrs-logo.png" alt="QRS" style="height:34px;width:auto;background:#fff;border-radius:6px;padding:3px 6px;margin-right:8px;">
           QRS Admin
-          <span class="logo-badge">SECURE</span>
+          <span class="logo-badge">2ND ROUND</span>
         </div>
         <div style="display:flex;align-items:center;gap:1rem;">
           <span id="helpUnreadBadge" onclick="document.getElementById('helpSupportList')?.scrollIntoView({behavior:'smooth'})" style="display:none;cursor:pointer;font-size:0.78rem;padding:0.2rem 0.55rem;border-radius:999px;background:#f59e0b;color:#fff;font-weight:600;">💬 0</span>
@@ -248,14 +275,16 @@
       </div>
     </header>
 
-    <div class="container" style="margin-top:1.3rem;">
+    <div class="container admin-shell" style="margin-top:1.1rem;">
       <div id="dataLossWarning" style="display:none;margin-bottom:1rem;"></div>
       <div class="tabs">
         <button class="tab-btn active" data-tab="dashboard" data-roles="admin,coordinator" onclick="switchTab('dashboard',this)">Dashboard</button>
         <button class="tab-btn" data-tab="live" data-roles="admin,coordinator" onclick="switchTab('live',this)">🟢 Live Monitoring</button>
         <button class="tab-btn" data-tab="create" data-roles="admin,coordinator" onclick="switchTab('create',this)">Create Assessment</button>
         <button class="tab-btn" data-tab="bulk" data-roles="admin,coordinator" onclick="switchTab('bulk',this)">Bulk Invite</button>
-        <button class="tab-btn" data-tab="results" data-roles="admin,coordinator" onclick="switchTab('results',this)">Results & Analytics</button>
+        <button class="tab-btn" data-tab="results" data-roles="admin,coordinator" onclick="switchTab('results',this)">Results</button>
+        <button class="tab-btn" data-tab="analytics" data-roles="admin,coordinator" onclick="switchTab('analytics',this)">Analytics</button>
+        <button class="tab-btn" data-tab="shortlist" data-roles="admin,coordinator" onclick="switchTab('shortlist',this)">Shortlist</button>
         <button class="tab-btn" data-tab="similarity" data-roles="admin" onclick="switchTab('similarity',this)">Similarity Check</button>
         <button class="tab-btn" data-tab="flags" data-roles="admin,coordinator" onclick="switchTab('flags',this)">Flagged</button>
         <button class="tab-btn" data-tab="ranking" data-roles="admin,coordinator" onclick="switchTab('ranking',this)">Ranking</button>
@@ -273,7 +302,7 @@
           </button>
           <button class="btn btn-outline" style="padding:1.1rem 1rem;font-size:1rem;border-radius:12px;flex-direction:column;gap:0.35rem;border-color:#c7d2fe;" onclick="switchTab('results', document.querySelector('[data-tab=results]'))">
             <span style="font-size:1.4rem;">📊</span>
-            <span>Results & Analytics</span>
+            <span>Results</span>
           </button>
           <button class="btn btn-outline" style="padding:1.1rem 1rem;font-size:1rem;border-radius:12px;flex-direction:column;gap:0.35rem;border-color:#bbf7d0;background:#f0fdf4;" onclick="switchTab('live', document.querySelector('[data-tab=live]'))">
             <span style="font-size:1.4rem;">🟢</span>
@@ -289,6 +318,11 @@
           <button class="btn btn-outline" onclick="downloadBackup()">⬇ Download Backup JSON</button>
           <button class="btn btn-primary" onclick="restoreLocalToBackend()">⬆ Restore browser → server</button>
           <button class="btn btn-outline" onclick="exportCSV()">Export CSV</button>
+          <button class="btn btn-outline" onclick="cleanupOldMedia(7)" title="Clear photos/videos older than 7 days">🧹 Clear media &gt;7 days</button>
+        </div>
+        <div class="card" style="border:1px solid #fca5a5;background:#fef2f2;margin-bottom:1rem;">
+          <h2 class="card-title" style="color:#991b1b;">⚡ Needs action</h2>
+          <div id="needsActionList"><p style="color:#64748b;font-size:0.9rem;">All clear.</p></div>
         </div>
         <div class="stat-grid" id="statGrid"></div>
         <div class="card" style="border:1px solid #c7d2fe;background:#eef2ff;margin-bottom:1rem;">
@@ -445,7 +479,8 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       <!-- RESULTS -->
       <div id="tab-results" class="tab-content">
         <div class="card">
-          <h2 class="card-title">Results & Analytics</h2>
+          <h2 class="card-title">Results <span id="resultsLiveBadge" style="font-size:0.75rem;font-weight:600;margin-left:0.45rem;padding:0.2rem 0.55rem;border-radius:999px;background:#d1fae5;color:#065f46;">LIVE</span></h2>
+          <p style="font-size:0.85rem;color:var(--muted);margin:-0.4rem 0 0.8rem;">Status updates automatically every few seconds — Pending → In progress → Completed.</p>
           <div class="filter-bar">
             <select id="filterRole" onchange="renderResults()">
               <option value="">All Roles</option>
@@ -481,6 +516,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
             </select>
             <input type="text" id="filterSearch" placeholder="Search name / email..." oninput="renderResults()">
             <button class="btn btn-outline" onclick="exportCSV()">Export CSV</button>
+          <button class="btn btn-outline" onclick="cleanupOldMedia(7)" title="Clear photos/videos older than 7 days">🧹 Clear media &gt;7 days</button>
             <button class="btn btn-outline" onclick="downloadBackup()">⬇ Backup JSON</button>
             <button class="btn btn-outline" onclick="renderResults(true)">Sort by Score</button>
             <button class="btn btn-outline" onclick="openComparePanel()">Compare 2</button>
@@ -523,10 +559,6 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
             </div>
             <div id="compareResult" style="margin-top:0.75rem;"></div>
           </div>
-          <div class="chart-box" style="margin-bottom:1rem;">
-            <h3>Flag summary (all candidates)</h3>
-            <canvas id="flagTypeChart" height="160"></canvas>
-          </div>
           <div style="overflow-x:auto;">
             <table>
               <thead>
@@ -539,7 +571,33 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       </div>
 
 
-      <!-- SIMILARITY CHECK -->
+      
+      <!-- SHORTLIST BOARD -->
+      
+      <!-- ANALYTICS -->
+      <div id="tab-analytics" class="tab-content">
+        <div class="card">
+          <h2 class="card-title">Analytics</h2>
+          <p style="font-size:0.88rem;color:var(--muted);margin-bottom:1rem;">Charts and summaries. Candidate list stays under <strong>Results</strong>.</p>
+          <div class="chart-row">
+            <div class="chart-box"><h3>Assessments by Status</h3><canvas id="analyticsStatusChart" height="200"></canvas></div>
+            <div class="chart-box"><h3>Average Score by Role</h3><canvas id="analyticsRoleChart" height="200"></canvas></div>
+          </div>
+          <div class="chart-box" style="margin-top:1rem;">
+            <h3>Flag summary (all candidates)</h3>
+            <canvas id="flagTypeChart" height="160"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-shortlist" class="tab-content">
+        <div class="card" style="border:1px solid #c7d2fe;background:linear-gradient(135deg,#eef2ff,#f8fafc);">
+          <h2 class="card-title">Shortlist board</h2>
+          <p style="font-size:0.88rem;color:var(--muted);margin:0;">Drag is not required — use tags in Results or the buttons below. Columns: Selected · Hold · Rejected · Untagged completed.</p>
+        </div>
+        <div id="shortlistBoard" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;margin-top:1rem;"></div>
+      </div>
+<!-- SIMILARITY CHECK -->
       <div id="tab-similarity" class="tab-content">
         <div class="card">
           <h2 class="card-title">Coding Answer Similarity Check</h2>
@@ -1024,6 +1082,8 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       if (name === 'dashboard') renderDashboard();
       if (name === 'live') renderLiveMonitor();
       if (name === 'results') renderResults();
+      if (name === 'analytics') { renderAnalyticsCharts(); renderFlagTypeChart(); }
+      if (name === 'shortlist') renderShortlist();
       if (name === 'flags') renderFlagged();
       if (name === 'ranking') renderRanking();
       if (name === 'qbank') renderQBank();
@@ -1403,6 +1463,45 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
     }
 
     let flagTypeChartInst = null;
+    
+    let analyticsStatusChart = null, analyticsRoleChart = null;
+    function renderAnalyticsCharts() {
+      const list = getAssessments();
+      const completed = list.filter(a => a.status === 'completed');
+      const flagged = list.filter(a => a.flags && a.flags.length > 0);
+      const inProgress = list.filter(a => a.status === 'in-progress');
+      const pending = list.filter(a => a.status === 'pending');
+      const c1 = document.getElementById('analyticsStatusChart');
+      if (c1 && typeof Chart !== 'undefined') {
+        if (analyticsStatusChart) analyticsStatusChart.destroy();
+        analyticsStatusChart = new Chart(c1.getContext('2d'), {
+          type: 'doughnut',
+          data: {
+            labels: ['Completed', 'In Progress', 'Pending', 'Flagged'],
+            datasets: [{ data: [completed.length, inProgress.length, pending.length, flagged.length], backgroundColor: ['#059669','#d97706','#94a3b8','#dc2626'] }]
+          },
+          options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+        });
+      }
+      const roles = ['salesforce','testing','database','integration','infra','wordpress','hr','pc','finance','data_analytics'];
+      const roleAvgs = roles.map(r => {
+        const items = completed.filter(a => a.role === r && a.score !== null);
+        return items.length ? Math.round(items.reduce((s,a) => s + a.score, 0) / items.length) : 0;
+      });
+      const c2 = document.getElementById('analyticsRoleChart');
+      if (c2 && typeof Chart !== 'undefined') {
+        if (analyticsRoleChart) analyticsRoleChart.destroy();
+        analyticsRoleChart = new Chart(c2.getContext('2d'), {
+          type: 'bar',
+          data: {
+            labels: roles.map(r => r.replace('_',' ')),
+            datasets: [{ label: 'Avg Score', data: roleAvgs, backgroundColor: '#4f46e5' }]
+          },
+          options: { responsive: true, scales: { y: { beginAtZero: true, max: 100 } }, plugins: { legend: { display: false } } }
+        });
+      }
+    }
+
     function renderFlagTypeChart() {
       const canvas = document.getElementById('flagTypeChart');
       if (!canvas || typeof Chart === 'undefined') return;
@@ -2195,7 +2294,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         (isAdmin() ? '<td><input type="checkbox" class="result-select" value="' + a.id + '"></td>' : '<td></td>') +
         '<td><strong>' + a.name + '</strong><br><small style="color:#64748b">' + a.email + '</small></td>' +
         '<td>' + a.role + '</td><td><span class="badge badge-' + a.level + '">' + a.level + '</span></td>' +
-        '<td>' + statusBadge(a.status, a) + (a.statusNote ? '<br><small style="color:#9a3412;">' + a.statusNote + '</small>' : '') + (a.status === 'expired' && a.expiresAt ? '<br><small style="color:#9d174d;">Exp: ' + new Date(a.expiresAt).toLocaleString() + '</small>' : '') + (a.status === 'missed' ? '<br><small style="color:#c2410c;">Did not attend</small>' : '') + '</td><td>' + (a.score !== null ? '<strong>' + a.score + '</strong>/100' : '—') + '</td>' +
+        '<td>' + statusBadge(a.status, a) + (a.status === 'in-progress' ? ' <span class="badge" style="background:#d1fae5;color:#065f46;">● attending</span>' : '') + (a.status === 'completed' ? ' <span class="badge" style="background:#e0e7ff;color:#3730a3;">finished</span>' : '') + (a.statusNote ? '<br><small style="color:#9a3412;">' + a.statusNote + '</small>' : '') + (a.status === 'expired' && a.expiresAt ? '<br><small style="color:#9d174d;">Exp: ' + new Date(a.expiresAt).toLocaleString() + '</small>' : '') + (a.status === 'missed' ? '<br><small style="color:#c2410c;">Did not attend</small>' : '') + '</td><td>' + (a.score !== null ? '<strong>' + a.score + '</strong>/100' : '—') + '</td>' +
         '<td>' + resultBadge(a) + '</td>' +
         '<td>' + (a.flags && a.flags.length ? '<span class="flag-count">' + a.flags.length + ' 🚩</span>' : '0') + '</td>' +
         '<td><select style="font-size:0.75rem;padding:0.2rem;max-width:100px;" onchange="setCandidateTag(\'' + a.id + '\', this.value)">' +
@@ -2205,19 +2304,28 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
           '<option value="Rejected"' + (a.tag==='Rejected' ? ' selected' : '') + '>Rejected</option>' +
         '</select></td>' +
         '<td>' + (a.startedAt ? new Date(a.startedAt).toLocaleString() : '—') + '</td>' +
-        '<td style="white-space:nowrap;"><button class="btn btn-outline" style="padding:0.25rem 0.5rem;font-size:0.76rem;" onclick="viewDetail(\'' + a.id + '\')">View</button>' +
-        ' <button class="btn btn-outline" style="padding:0.25rem 0.5rem;font-size:0.76rem;border-color:#fdba74;" onclick="openInlineEdit(\'' + a.id + '\')">Edit</button>' +
-        ' <button class="btn btn-outline" style="padding:0.25rem 0.5rem;font-size:0.76rem;" onclick="extendLinkOneHour(\'' + a.id + '\')" title="Extend link expiry +1 hour">+1h</button>' +
-        (a.status === 'in-progress' || a.status === 'flagged' ? ' <button class="btn btn-outline" style="padding:0.25rem 0.5rem;font-size:0.76rem;" onclick="extendTime(\'' + a.id + '\')">+10m</button>' : '') +
-        (a.flags && a.flags.length ? ' <button class="btn btn-warning" style="padding:0.25rem 0.5rem;font-size:0.76rem;" onclick="freeCandidate(\'' + a.id + '\')">Free</button>' : '') +
-        (a.status !== 'completed' ? ' <button class="btn btn-primary" style="padding:0.25rem 0.5rem;font-size:0.76rem;" onclick="viewDetail(\'' + a.id + '\'); setTimeout(function(){resendLink(\'' + a.id + '\')},200)">Resend</button>' : '') +
-        ' <button class="btn btn-success" style="padding:0.25rem 0.5rem;font-size:0.76rem;" onclick="copyWhatsApp(\'' + a.id + '\')">WhatsApp</button>' +
-        ' <button class="btn btn-outline" style="padding:0.25rem 0.5rem;font-size:0.76rem;" onclick="printReport(\'' + a.id + '\')">Report</button> ' +
-        ' <button class="btn btn-outline" style="padding:0.25rem 0.5rem;font-size:0.76rem;" onclick="printResultCard(\'' + a.id + '\')">Print card</button>' +
-        (isAdmin() ? ' <button class="btn btn-danger" style="padding:0.25rem 0.5rem;font-size:0.76rem;" onclick="deleteCandidate(\'' + a.id + '\')">Delete</button>' : '') +
-        '</td></tr>'
+        '<td><div class="row-actions">' +
+        '<button class="btn btn-outline" style="padding:0.25rem 0.55rem;font-size:0.76rem;" onclick="viewDetail(\'' + a.id + '\')">View</button>' +
+        '<button type="button" class="menu-dots" onclick="toggleActionMenu(event,\'' + a.id + '\')" title="More actions" aria-label="More actions">⋮</button>' +
+        '<div class="action-menu" id="menu-' + a.id + '">' +
+          '<button type="button" onclick="closeAllMenus(); openInlineEdit(\'' + a.id + '\')">✏️ Edit time / status</button>' +
+          (a.status !== 'completed' ? '<button type="button" onclick="closeAllMenus(); viewDetail(\'' + a.id + '\'); setTimeout(function(){resendLink(\'' + a.id + '\')},200)">🔗 Resend new link</button>' : '') +
+          '<button type="button" onclick="closeAllMenus(); copyWhatsApp(\'' + a.id + '\')">💬 WhatsApp message</button>' +
+          '<button type="button" onclick="closeAllMenus(); extendLinkOneHour(\'' + a.id + '\')">⏰ Extend link +1 hour</button>' +
+          (a.status === 'in-progress' || a.status === 'flagged' ? '<button type="button" onclick="closeAllMenus(); extendTime(\'' + a.id + '\')">⏱ Add +10 min exam</button>' : '') +
+          (a.flags && a.flags.length ? '<button type="button" onclick="closeAllMenus(); freeCandidate(\'' + a.id + '\')">🔓 Free candidate</button>' : '') +
+          '<div class="sep"></div>' +
+          '<button type="button" onclick="closeAllMenus(); printReport(\'' + a.id + '\')">📄 Print report</button>' +
+          '<button type="button" onclick="closeAllMenus(); printResultCard(\'' + a.id + '\')">🪪 Print result card</button>' +
+          (isAdmin() ? '<div class="sep"></div><button type="button" class="danger" onclick="closeAllMenus(); deleteCandidate(\'' + a.id + '\')">🗑 Delete candidate</button>' : '') +
+        '</div></div></td></tr>'
       ).join('') : '<tr><td colspan="11" style="text-align:center;color:#94a3b8;">No matching results</td></tr>';
-      renderFlagTypeChart();
+      const rb = document.getElementById('resultsLiveBadge');
+      if (rb) rb.textContent = 'LIVE · ' + new Date().toLocaleTimeString();
+      // flag chart only on analytics tab
+      if (document.getElementById('tab-analytics') && document.getElementById('tab-analytics').classList.contains('active')) {
+        renderFlagTypeChart();
+      }
     }
 
     function extendTime(id) {
@@ -3089,7 +3197,150 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
       w.document.close();
     }
 
-    function refreshAll() {
+    
+    function closeAllMenus() {
+      document.querySelectorAll('.action-menu.show').forEach(function(el){ el.classList.remove('show'); });
+      document.querySelectorAll('.menu-dots.open').forEach(function(el){ el.classList.remove('open'); });
+    }
+    function toggleActionMenu(ev, id) {
+      if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+      const menu = document.getElementById('menu-' + id);
+      const btn = ev && ev.currentTarget;
+      const wasOpen = menu && menu.classList.contains('show');
+      closeAllMenus();
+      if (menu && !wasOpen) {
+        menu.classList.add('show');
+        if (btn) btn.classList.add('open');
+      }
+    }
+    document.addEventListener('click', function() { closeAllMenus(); });
+
+    
+    
+    function autoMarkMissed() {
+      const list = getAssessments();
+      let changed = 0;
+      const now = Date.now();
+      list.forEach(a => {
+        if (!a || a.status === 'completed' || a.status === 'in-progress' || a.status === 'flagged' || a.status === 'missed') return;
+        const exp = a.expiresAt ? new Date(a.expiresAt).getTime() : null;
+        if (!exp || exp >= now) return;
+        if (a.status === 'pending') {
+          const scheduled = a.scheduledAt ? new Date(a.scheduledAt).getTime() : null;
+          if (scheduled && scheduled < now) {
+            a.status = 'missed';
+            a.statusNote = (a.statusNote ? a.statusNote + ' · ' : '') + 'Auto: did not attend (schedule passed)';
+            changed++;
+          } else {
+            a.status = 'expired';
+            a.statusNote = (a.statusNote ? a.statusNote + ' · ' : '') + 'Auto: link expired';
+            changed++;
+          }
+        }
+      });
+      if (changed) {
+        lsSet('assessments', JSON.stringify(list));
+        list.forEach(a => {
+          if (a.statusNote && String(a.statusNote).indexOf('Auto:') >= 0) {
+            try { syncRecordToBackend(a); } catch (e) {}
+          }
+        });
+      }
+      return changed;
+    }
+
+    function renderNeedsAction() {
+      const el = document.getElementById('needsActionList');
+      if (!el) return;
+      const list = getAssessments();
+      const items = [];
+      list.forEach(a => {
+        if (a.helpUnreadAdmin) items.push({ a: a, why: 'Unread help chat', tone: '#b45309' });
+        if (a.flags && a.flags.length >= 2) items.push({ a: a, why: a.flags.length + ' flags', tone: '#991b1b' });
+        if (a.status === 'flagged') items.push({ a: a, why: 'Flagged status', tone: '#991b1b' });
+        if (a.status === 'expired') items.push({ a: a, why: 'Link expired', tone: '#9d174d' });
+        if (a.status === 'missed') items.push({ a: a, why: 'Missed / no-show', tone: '#c2410c' });
+        if (a.status === 'in-progress' && a.flags && a.flags.length) items.push({ a: a, why: 'Live + flags', tone: '#b45309' });
+      });
+      const seen = {};
+      const uniq = [];
+      items.forEach(it => {
+        const k = it.a.id + '|' + it.why;
+        if (seen[k]) return;
+        seen[k] = true;
+        uniq.push(it);
+      });
+      if (!uniq.length) {
+        el.innerHTML = '<p style="color:#64748b;font-size:0.9rem;margin:0;">All clear — nothing needs attention.</p>';
+        return;
+      }
+      el.innerHTML = uniq.slice(0, 12).map(function(it) {
+        const a = it.a;
+        return '<div style="display:flex;justify-content:space-between;align-items:center;gap:0.6rem;padding:0.45rem 0;border-bottom:1px solid #fecaca;font-size:0.88rem;">' +
+          '<div><strong>' + a.name + '</strong> <span style="color:' + it.tone + ';">· ' + it.why + '</span><br><small style="color:#64748b;">' + a.role + ' / ' + a.level + '</small></div>' +
+          '<button class="btn btn-outline" style="padding:0.25rem 0.55rem;font-size:0.78rem;" onclick="viewDetail(\'' + a.id + '\')">Open</button></div>';
+      }).join('');
+    }
+
+    function renderShortlist() {
+      const el = document.getElementById('shortlistBoard');
+      if (!el) return;
+      const list = getAssessments().filter(function(a) { return a.status === 'completed' || a.score != null || a.tag; });
+      const cols = [
+        { key: 'Selected', title: 'Selected', bg: '#ecfdf5', border: '#6ee7b7' },
+        { key: 'Hold', title: 'Hold', bg: '#fffbeb', border: '#fcd34d' },
+        { key: 'Rejected', title: 'Rejected', bg: '#fef2f2', border: '#fca5a5' },
+        { key: '', title: 'Untagged', bg: '#f8fafc', border: '#e2e8f0' }
+      ];
+      el.innerHTML = cols.map(function(col) {
+        const rows = list.filter(function(a) { return (a.tag || '') === col.key; });
+        var body = rows.length ? rows.map(function(a) {
+          return '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:0.55rem 0.65rem;margin-bottom:0.45rem;font-size:0.85rem;">' +
+            '<strong>' + a.name + '</strong> · ' + (a.score != null ? a.score + '/100' : '—') +
+            '<br><small style="color:#64748b;">' + a.role + ' / ' + a.level + '</small>' +
+            '<div style="margin-top:0.35rem;display:flex;gap:0.3rem;flex-wrap:wrap;">' +
+            '<button class="btn btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem;" onclick="viewDetail(\'' + a.id + '\')">View</button>' +
+            (col.key !== 'Selected' ? '<button class="btn btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem;" onclick="setCandidateTag(\'' + a.id + '\',\'Selected\');renderShortlist();">Select</button>' : '') +
+            (col.key !== 'Hold' ? '<button class="btn btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem;" onclick="setCandidateTag(\'' + a.id + '\',\'Hold\');renderShortlist();">Hold</button>' : '') +
+            (col.key !== 'Rejected' ? '<button class="btn btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem;" onclick="setCandidateTag(\'' + a.id + '\',\'Rejected\');renderShortlist();">Reject</button>' : '') +
+            '</div></div>';
+        }).join('') : '<p style="color:#94a3b8;font-size:0.85rem;margin:0;">Empty</p>';
+        return '<div style="background:' + col.bg + ';border:1px solid ' + col.border + ';border-radius:14px;padding:0.85rem;min-height:180px;">' +
+          '<div style="font-weight:700;margin-bottom:0.6rem;">' + col.title + ' <span style="color:#64748b;font-weight:500;font-size:0.85rem;">(' + rows.length + ')</span></div>' +
+          body + '</div>';
+      }).join('');
+    }
+
+    async function cleanupOldMedia(days) {
+      days = days || 7;
+      if (!confirm('Clear photos & videos for candidates completed more than ' + days + ' days ago? Scores and answers stay.')) return;
+      const list = getAssessments();
+      const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+      let n = 0;
+      for (const a of list) {
+        const doneAt = a.completedAt ? new Date(a.completedAt).getTime() : 0;
+        if (!doneAt || doneAt > cutoff) continue;
+        const hasMedia = (a.photoHistory && a.photoHistory.length) || (a.videoHistory && a.videoHistory.length) || a.lastPhoto;
+        if (!hasMedia) continue;
+        try {
+          await fetch(BACKEND_BASE + '/api/assessments/' + encodeURIComponent(a.id) + '/media', {
+            method: 'DELETE', headers: authHeaders()
+          });
+        } catch (e) {}
+        a.photoHistory = [];
+        a.videoHistory = [];
+        a.lastPhoto = null;
+        a.lastPhotoAt = null;
+        a.lastVideoAt = null;
+        try { await syncRecordToBackend(a); } catch (e) {}
+        n++;
+      }
+      lsSet('assessments', JSON.stringify(list));
+      refreshAll();
+      alert('Cleared media for ' + n + ' candidate(s) older than ' + days + ' days.');
+    }
+
+function refreshAll() {
       try { renderDashboard(); } catch (e) { console.warn(e); }
       try { renderResults(); } catch (e) { console.warn(e); }
       try { renderFlagged(); } catch (e) { console.warn(e); }
