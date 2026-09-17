@@ -510,9 +510,12 @@ def append_media(aid, kind, data_url, meta=None):
         if kind == "photo":
             hist = payload.get("photoHistory") or []
             hist.append({"img": data_url, "at": at, "mediaId": mid})
-            # Cap embedded history to last 30 for payload size; full set in media table
-            if len(hist) > 30:
-                hist = hist[-30:]
+            # Cap embedded preview for payload size. At a 10s capture interval this
+            # covers roughly 2.7 hours of a session — effectively the whole test for
+            # any realistic duration. The FULL set of photos is always additionally
+            # kept in assessment_media regardless of this cap.
+            if len(hist) > 1000:
+                hist = hist[-1000:]
             payload["photoHistory"] = hist
             payload["lastPhoto"] = data_url
             payload["lastPhotoAt"] = at
@@ -709,41 +712,33 @@ def send_email(to_email, subject, html_body):
 
 
 def build_link_email_html(name, role, level, link, duration, expires_at_str, unlock_at_str=None, validity_hours=None):
-    unlock_row = (
-        f"<li><strong>Starts unlocking:</strong> {unlock_at_str}</li>"
+    start_line = (
+        f"The assessment will start on <strong>{unlock_at_str}</strong>."
         if unlock_at_str else
-        "<li><strong>Available:</strong> immediately</li>"
+        "The assessment is available to start right away."
     )
-    validity_row = (
-        f"<li><strong>Link valid for:</strong> {validity_hours} hours (until {expires_at_str})</li>"
-        if validity_hours else
-        f"<li><strong>Link valid until:</strong> {expires_at_str}</li>"
-    )
+    validity_hours_str = validity_hours or 24
     return f"""
     <div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#0f172a;">
       <div style="background:#0f172a;padding:1.2rem 1.5rem;border-radius:12px 12px 0 0;">
-        <span style="color:#fff;font-weight:700;font-size:1.05rem;">QRS Solutions — 2nd Round Assessment</span>
+        <span style="color:#fff;font-weight:700;font-size:1.05rem;">QRS Solutions — Assessment Round</span>
       </div>
       <div style="border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;padding:1.5rem;">
         <p>Hi {name},</p>
-        <p>🎉 <strong>Congratulations!</strong> You've cleared the first round and have been invited to take the <strong>2nd round assessment</strong> for the <strong>{role}</strong> role ({level} level).</p>
+        <p><strong>Congratulations!</strong> You have been shortlisted for the Assessment Round.</p>
+        <p>{start_line} Kindly attend the test without fail and ensure that you:</p>
+        <ul style="font-size:0.9rem;color:#334155;">
+          <li>Attend the test using a laptop.</li>
+          <li>Sit in a quiet and well-lit place.</li>
+          <li>Have a stable internet connection.</li>
+          <li>Complete the assessment within the given time.</li>
+        </ul>
         <p style="margin:1.3rem 0;text-align:center;">
           <a href="{link}" style="background:#4f46e5;color:#fff;text-decoration:none;font-weight:600;padding:0.75rem 1.5rem;border-radius:10px;display:inline-block;">Start Assessment</a>
         </p>
-        <p style="font-size:0.85rem;color:#64748b;word-break:break-all;">Or copy this link: {link}</p>
-        <div style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;padding:0.9rem 1.1rem;margin:1rem 0;">
-          <div style="font-weight:700;color:#3730a3;margin-bottom:0.4rem;font-size:0.88rem;">⏱ Timing details</div>
-          <ul style="font-size:0.9rem;color:#334155;margin:0;padding-left:1.1rem;">
-            {unlock_row}
-            <li><strong>Duration:</strong> {duration} minutes (timer runs inside the exam)</li>
-            {validity_row}
-          </ul>
-        </div>
-        <ul style="font-size:0.9rem;color:#334155;">
-          <li>A working webcam and microphone are required — please use a desktop/laptop.</li>
-          <li>Please join a few minutes early and ensure a stable internet connection.</li>
-        </ul>
-        <p style="margin-top:1.3rem;">All the best! 🌟</p>
+        <p style="font-size:0.85rem;color:#64748b;word-break:break-all;">Assessment Link: {link}</p>
+        <p style="font-size:0.88rem;color:#334155;"><strong>Important:</strong> The assessment link will be valid for {validity_hours_str} hours from the scheduled assessment start time. Please ensure that you access and complete the assessment within the validity period.</p>
+        <p style="margin-top:1.3rem;">Best wishes for your assessment!</p>
         <p style="font-size:0.85rem;color:#94a3b8;margin-top:1rem;">This is an automated message — please do not reply to this email. If you have questions, contact your recruiter directly.</p>
       </div>
     </div>

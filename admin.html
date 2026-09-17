@@ -831,6 +831,24 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
     </div>
   </div>
 
+  <div class="modal" id="photoGalleryModal">
+    <div class="modal-content" style="max-width:820px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:0.8rem;margin-bottom:0.8rem;">
+        <h3 id="photoGalleryTitle" style="margin:0;">Photo Gallery</h3>
+        <span id="photoGalleryCount" style="font-size:0.82rem;color:var(--muted);"></span>
+      </div>
+      <div id="photoGalleryZoom" style="display:none;margin-bottom:0.8rem;">
+        <img id="photoGalleryZoomImg" style="width:100%;max-height:420px;object-fit:contain;border-radius:10px;background:#0f172a;">
+        <div id="photoGalleryZoomLabel" style="font-size:0.8rem;color:var(--muted);margin-top:0.3rem;text-align:center;"></div>
+      </div>
+      <div id="photoGalleryGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:0.5rem;max-height:420px;overflow-y:auto;padding-right:0.2rem;"></div>
+      <div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">
+        <button class="btn btn-outline" onclick="document.getElementById('photoGalleryModal').classList.remove('show')">Close</button>
+        <button class="btn btn-danger" id="photoGalleryDeleteBtn" onclick="">🗑 Delete Media</button>
+      </div>
+    </div>
+  </div>
+
   <script src="questions.js"></script>
   <script>
     const DEFAULT_USER = 'admin';
@@ -1824,23 +1842,32 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
     // Builds the candidate email subject/body text (shared by mailto, Gmail compose, and copy).
     function buildCandidateEmailText(record, fullUrl) {
       const name = record.name || 'Candidate';
-      const unlockText = record.scheduledAt ? new Date(record.scheduledAt).toLocaleString() : 'Immediately';
-      const durationText = record.duration || '—';
-      const validityText = record.linkValidityHours
-        ? ('Valid for ' + record.linkValidityHours + ' hours')
-        : (record.expiresAt ? ('Valid until ' + new Date(record.expiresAt).toLocaleString()) : '—');
-      const subject = 'Congratulations! Your QRS Second Round Assessment Link';
+      const validityHours = record.linkValidityHours || 24;
+
+      let startLine;
+      if (record.scheduledAt) {
+        const sched = new Date(record.scheduledAt);
+        const isToday = sched.toDateString() === new Date().toDateString();
+        const timeStr = sched.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        startLine = isToday
+          ? 'The assessment will start today at ' + timeStr + '.'
+          : 'The assessment will start on ' + sched.toLocaleDateString() + ' at ' + timeStr + '.';
+      } else {
+        startLine = 'The assessment is available to start right away.';
+      }
+
+      const subject = 'Congratulations! Your Assessment Link';
       const body =
-        'Hello ' + name + ',\n\n' +
-        'Congratulations! You have been shortlisted for the 2nd Round Assessment.\n\n' +
-        'Please complete it using this link:\n' + fullUrl + '\n\n' +
-        'Timing details:\n' +
-        '- Starts unlocking: ' + unlockText + '\n' +
-        '- Duration: ' + durationText + ' minutes\n' +
-        '- ' + validityText + '\n\n' +
-        'A working webcam and microphone are required — please use a desktop/laptop.\n\n' +
-        'All the best!\n\n' +
-        'Best regards,\nQRS Recruitment';
+        'Hi ' + name + ',\n\n' +
+        'Congratulations! You have been shortlisted for the Assessment Round.\n\n' +
+        startLine + ' Kindly attend the test without fail and ensure that you:\n\n' +
+        '* Attend the test using a laptop.\n' +
+        '* Sit in a quiet and well-lit place.\n' +
+        '* Have a stable internet connection.\n' +
+        '* Complete the assessment within the given time.\n\n' +
+        'Assessment Link:\n' + fullUrl + '\n\n' +
+        'Important: The assessment link will be valid for ' + validityHours + ' hours from the scheduled assessment start time. Please ensure that you access and complete the assessment within the validity period.\n\n' +
+        'Best wishes for your assessment!';
       return { subject, body };
     }
 
@@ -1867,27 +1894,11 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
 
     function emailLink() {
       if (!window.generatedLink) return alert('Generate a link first');
-      const name = window.lastCandName || 'Candidate';
       const email = window.lastCandEmail || '';
-      const rec = (typeof getAssessments === 'function' ? getAssessments() : []).find(a => a.token && window.generatedLink.indexOf(a.token) !== -1) || {};
+      const rec = (typeof getAssessments === 'function' ? getAssessments() : []).find(a => a.token && window.generatedLink.indexOf(a.token) !== -1) || { name: window.lastCandName };
       const fullUrl = window.location.origin + window.location.pathname.replace(/admin\.html.*/, '') + window.generatedLink;
-      const unlockText = rec.scheduledAt ? new Date(rec.scheduledAt).toLocaleString() : 'Immediately';
-      const durationText = rec.duration || '—';
-      const validityText = rec.linkValidityHours ? ('Valid for ' + rec.linkValidityHours + ' hours') : (rec.expiresAt ? ('Valid until ' + new Date(rec.expiresAt).toLocaleString()) : '—');
-      const subject = encodeURIComponent('Congratulations! Your QRS Second Round Assessment Link');
-      const body = encodeURIComponent(
-        'Hello ' + name + ',\n\n' +
-        'Congratulations! You have been shortlisted for the 2nd Round Assessment.\n\n' +
-        'Please complete it using this link:\n' + fullUrl + '\n\n' +
-        'Timing details:\n' +
-        '- Starts unlocking: ' + unlockText + '\n' +
-        '- Duration: ' + durationText + ' minutes\n' +
-        '- ' + validityText + '\n\n' +
-        'A working webcam and microphone are required — please use a desktop/laptop.\n\n' +
-        'All the best!\n\n' +
-        'Best regards,\nQRS Recruitment'
-      );
-      window.location.href = 'mailto:' + email + '?subject=' + subject + '&body=' + body;
+      const { subject, body } = buildCandidateEmailText(rec, fullUrl);
+      window.location.href = 'mailto:' + email + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
     }
 
     // ========== Bulk Invite ==========
@@ -3174,9 +3185,12 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
         '</div>';
       }
 
-      html += '<strong style="font-size:0.85rem;">Latest photo</strong>';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+        '<strong style="font-size:0.85rem;">Latest photo</strong>' +
+        (a.lastPhoto ? '<button class="btn btn-outline" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="openPhotoGallery(\'' + id + '\')">🖼 View full gallery (' + (a.photoHistory ? a.photoHistory.length : 1) + ')</button>' : '') +
+        '</div>';
       html += a.lastPhoto
-        ? '<img src="' + a.lastPhoto + '" style="width:100%;max-height:320px;object-fit:contain;border-radius:10px;background:#0f172a;margin:0.4rem 0 1rem;border:1px solid #e2e8f0;">'
+        ? '<img src="' + a.lastPhoto + '" style="width:100%;max-height:320px;object-fit:contain;border-radius:10px;background:#0f172a;margin:0.4rem 0 1rem;border:1px solid #e2e8f0;cursor:zoom-in;" onclick="openPhotoGallery(\'' + id + '\')" title="Click to view full gallery">'
         : '<div style="padding:1rem;color:#94a3b8;font-size:0.85rem;">No photo captured yet.</div>';
 
       const videos = (a.videoHistory || []).slice(-4).reverse();
@@ -3193,6 +3207,49 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
         html += '<div style="padding:0.6rem 0;color:#94a3b8;font-size:0.85rem;">No video clip yet — clips are captured every few minutes.</div>';
       }
       content.innerHTML = html;
+    }
+
+    // ===== Full photo gallery (every captured photo for one candidate, with delete) =====
+    function openPhotoGallery(id) {
+      const a = getAssessments().find(x => x.id === id);
+      if (!a) return;
+      const photos = (a.photoHistory && a.photoHistory.length) ? a.photoHistory : (a.lastPhoto ? [{ img: a.lastPhoto, at: a.lastPhotoAt }] : []);
+      document.getElementById('photoGalleryTitle').textContent = a.name + ' — Photo Gallery';
+      document.getElementById('photoGalleryCount').textContent = photos.length + ' photo' + (photos.length === 1 ? '' : 's') + ' captured';
+      document.getElementById('photoGalleryZoom').style.display = 'none';
+      const grid = document.getElementById('photoGalleryGrid');
+      if (!photos.length) {
+        grid.innerHTML = '<p style="color:#94a3b8;font-size:0.85rem;grid-column:1/-1;">No photos captured yet.</p>';
+      } else {
+        grid.innerHTML = photos.map((p, i) => {
+          const label = p.at ? new Date(p.at).toLocaleTimeString() : ('#' + (i + 1));
+          return '<button type="button" style="display:block;width:100%;padding:0;border:1px solid #e2e8f0;border-radius:8px;background:#fff;cursor:zoom-in;text-align:center;overflow:hidden;" ' +
+            'onclick="zoomGalleryPhoto(\'' + id + '\', ' + i + ')">' +
+            '<img src="' + p.img + '" alt="Photo ' + (i + 1) + '" style="width:100%;aspect-ratio:4/3;object-fit:cover;display:block;pointer-events:none;">' +
+            '<span style="display:block;padding:0.2rem;font-size:0.7rem;color:#64748b;">' + label + '</span></button>';
+        }).join('');
+      }
+      const delBtn = document.getElementById('photoGalleryDeleteBtn');
+      if (delBtn) {
+        delBtn.style.display = isAdmin() ? '' : 'none';
+        delBtn.onclick = function() {
+          clearCandidateMedia(id).then(function() {
+            document.getElementById('photoGalleryModal').classList.remove('show');
+          });
+        };
+      }
+      document.getElementById('photoGalleryModal').classList.add('show');
+    }
+
+    function zoomGalleryPhoto(id, index) {
+      const a = getAssessments().find(x => x.id === id);
+      if (!a) return;
+      const photos = (a.photoHistory && a.photoHistory.length) ? a.photoHistory : (a.lastPhoto ? [{ img: a.lastPhoto, at: a.lastPhotoAt }] : []);
+      const p = photos[index];
+      if (!p) return;
+      document.getElementById('photoGalleryZoomImg').src = p.img;
+      document.getElementById('photoGalleryZoomLabel').textContent = p.at ? new Date(p.at).toLocaleString() : ('Photo #' + (index + 1));
+      document.getElementById('photoGalleryZoom').style.display = 'block';
     }
 
     // Called from the 8s refresh loop — keeps the open live-feed modal current without the admin re-clicking.
