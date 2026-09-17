@@ -772,7 +772,7 @@ def send_link_email(aid):
     ok, err = send_email(to_email, subject, html)
     if ok:
         return jsonify({"ok": True})
-    return jsonify({"ok": False, "error": err}), 502
+    return jsonify({"ok": False, "error": err}), 500
 
 
 # ---------- Routes ----------
