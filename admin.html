@@ -447,6 +447,17 @@
               <button class="btn btn-success" onclick="copyLink()">Copy Link</button>
               <button class="btn btn-outline" onclick="emailLink()">Email Link (mailto)</button>
             </div>
+            <div id="gmailMessageBox" style="display:none;margin-top:1rem;padding:0.9rem 1rem;background:#fff;border:1px solid #c7d2fe;border-radius:12px;">
+              <div style="font-weight:700;color:#3730a3;margin-bottom:0.5rem;font-size:0.88rem;">📧 Ready-to-send message</div>
+              <div style="font-size:0.8rem;color:#64748b;margin-bottom:0.4rem;">To: <span id="gmailMsgTo" style="color:#0f172a;font-weight:600;"></span></div>
+              <div style="font-size:0.8rem;color:#64748b;margin-bottom:0.3rem;">Subject: <span id="gmailMsgSubject" style="color:#0f172a;"></span></div>
+              <textarea id="gmailMsgBody" readonly style="width:100%;min-height:180px;font-family:inherit;font-size:0.85rem;border:1px solid var(--border);border-radius:10px;padding:0.7rem;background:#f8fafc;color:#0f172a;"></textarea>
+              <div style="margin-top:0.6rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
+                <button class="btn btn-primary" onclick="copyGmailMessage()">📋 Copy Message</button>
+                <a id="openInGmailBtn" href="#" target="_blank" class="btn btn-outline">✉️ Open in Gmail</a>
+              </div>
+              <small style="color:var(--muted);display:block;margin-top:0.4rem;">Opens a pre-filled Gmail compose window — you just click Send. Works even if auto-email isn't set up.</small>
+            </div>
           </div>
         </div>
       </div>
@@ -1633,6 +1644,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         window.generatedLink = link;
         window.lastCandName = name;
         window.lastCandEmail = email;
+        showGmailMessageBox(record, fullUrl);
 
         if (synced && document.getElementById('autoEmailOnCreate').checked) {
           const emailStatusEl = document.createElement('div');
@@ -1807,6 +1819,50 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       const pass = getPassMark();
       if (t >= pass) return '<span class="badge" style="background:#d1fae5;color:#065f46;">PASS</span>';
       return '<span class="badge" style="background:#fee2e2;color:#991b1b;">FAIL</span>';
+    }
+
+    // Builds the candidate email subject/body text (shared by mailto, Gmail compose, and copy).
+    function buildCandidateEmailText(record, fullUrl) {
+      const name = record.name || 'Candidate';
+      const unlockText = record.scheduledAt ? new Date(record.scheduledAt).toLocaleString() : 'Immediately';
+      const durationText = record.duration || '—';
+      const validityText = record.linkValidityHours
+        ? ('Valid for ' + record.linkValidityHours + ' hours')
+        : (record.expiresAt ? ('Valid until ' + new Date(record.expiresAt).toLocaleString()) : '—');
+      const subject = 'Congratulations! Your QRS Second Round Assessment Link';
+      const body =
+        'Hello ' + name + ',\n\n' +
+        'Congratulations! You have been shortlisted for the 2nd Round Assessment.\n\n' +
+        'Please complete it using this link:\n' + fullUrl + '\n\n' +
+        'Timing details:\n' +
+        '- Starts unlocking: ' + unlockText + '\n' +
+        '- Duration: ' + durationText + ' minutes\n' +
+        '- ' + validityText + '\n\n' +
+        'A working webcam and microphone are required — please use a desktop/laptop.\n\n' +
+        'All the best!\n\n' +
+        'Best regards,\nQRS Recruitment';
+      return { subject, body };
+    }
+
+    // Shows the "Ready-to-send message" box with Copy + Open in Gmail, right after a link is generated.
+    function showGmailMessageBox(record, fullUrl) {
+      const box = document.getElementById('gmailMessageBox');
+      if (!box) return;
+      const { subject, body } = buildCandidateEmailText(record, fullUrl);
+      document.getElementById('gmailMsgTo').textContent = record.email || '(no email on file)';
+      document.getElementById('gmailMsgSubject').textContent = subject;
+      document.getElementById('gmailMsgBody').value = body;
+      const gmailUrl = 'https://mail.google.com/mail/?view=cm&fs=1&to=' + encodeURIComponent(record.email || '') +
+        '&su=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+      document.getElementById('openInGmailBtn').href = gmailUrl;
+      box.style.display = 'block';
+    }
+
+    function copyGmailMessage() {
+      const ta = document.getElementById('gmailMsgBody');
+      const subject = document.getElementById('gmailMsgSubject').textContent;
+      const fullText = 'Subject: ' + subject + '\n\n' + ta.value;
+      navigator.clipboard.writeText(fullText).then(() => alert('Message copied! Paste it into Gmail (or any email app) and hit Send.'));
     }
 
     function emailLink() {
