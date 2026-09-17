@@ -1679,7 +1679,9 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
             link: fullUrl,
             duration: record.duration,
             expiresAtLabel: record.expiresAt ? new Date(record.expiresAt).toLocaleString() : null,
-            subject: opts.subject
+            unlockAtLabel: record.scheduledAt ? new Date(record.scheduledAt).toLocaleString() : null,
+            validityHours: record.linkValidityHours,
+            subject: opts.subject || ('Congratulations! Your QRS 2nd Round Assessment Link — ' + (record.role || ''))
           })
         });
         if (res.status === 401) { forceReLogin(); return { ok: false, error: 'Session expired' }; }
@@ -1811,8 +1813,24 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       if (!window.generatedLink) return alert('Generate a link first');
       const name = window.lastCandName || 'Candidate';
       const email = window.lastCandEmail || '';
-      const subject = encodeURIComponent('QRS Second Round Assessment Link');
-      const body = encodeURIComponent('Hello ' + name + ',\n\nPlease complete your QRS Second Round Assessment using this link:\n\n' + window.location.origin + window.location.pathname.replace(/admin\\.html.*/, '') + window.generatedLink + '\n\nBest regards,\nQRS Recruitment');
+      const rec = (typeof getAssessments === 'function' ? getAssessments() : []).find(a => a.token && window.generatedLink.indexOf(a.token) !== -1) || {};
+      const fullUrl = window.location.origin + window.location.pathname.replace(/admin\.html.*/, '') + window.generatedLink;
+      const unlockText = rec.scheduledAt ? new Date(rec.scheduledAt).toLocaleString() : 'Immediately';
+      const durationText = rec.duration || '—';
+      const validityText = rec.linkValidityHours ? ('Valid for ' + rec.linkValidityHours + ' hours') : (rec.expiresAt ? ('Valid until ' + new Date(rec.expiresAt).toLocaleString()) : '—');
+      const subject = encodeURIComponent('Congratulations! Your QRS Second Round Assessment Link');
+      const body = encodeURIComponent(
+        'Hello ' + name + ',\n\n' +
+        'Congratulations! You have been shortlisted for the 2nd Round Assessment.\n\n' +
+        'Please complete it using this link:\n' + fullUrl + '\n\n' +
+        'Timing details:\n' +
+        '- Starts unlocking: ' + unlockText + '\n' +
+        '- Duration: ' + durationText + ' minutes\n' +
+        '- ' + validityText + '\n\n' +
+        'A working webcam and microphone are required — please use a desktop/laptop.\n\n' +
+        'All the best!\n\n' +
+        'Best regards,\nQRS Recruitment'
+      );
       window.location.href = 'mailto:' + email + '?subject=' + subject + '&body=' + body;
     }
 
