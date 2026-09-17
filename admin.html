@@ -434,6 +434,12 @@
             <input type="checkbox" id="autoEmailOnCreate" checked style="width:auto;">
             📧 Automatically email this link to the candidate (no-reply style)
           </label>
+          <label style="display:flex;align-items:center;gap:0.5rem;margin-top:0.65rem;font-size:0.88rem;font-weight:500;cursor:pointer;">
+            <input type="checkbox" id="allowMobile" style="width:auto;">
+            📱 Allow mobile / tablet for this candidate (default: laptop only)
+          </label>
+          <small style="display:block;color:var(--muted);margin:0.25rem 0 0 1.6rem;font-size:0.8rem;">If unchecked, phones and tablets are blocked. Enable only when you intentionally allow mobile.</small>
+
           <div style="margin-top:1rem;display:flex;gap:0.75rem;flex-wrap:wrap;">
             <button class="btn btn-primary" onclick="createAssessment()">Generate Secure Link (100 Marks)</button>
             <button class="btn btn-outline" onclick="previewQuestions()">Preview Questions</button>
@@ -1612,6 +1618,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
 
       const record = {
         id, token, name, email, mobile, role, level,
+        allowMobile: document.getElementById('allowMobile') ? document.getElementById('allowMobile').checked : false,
         duration,
         defaultDuration: assessmentData.duration,
         scheduledAt,
@@ -1685,6 +1692,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         document.getElementById('candName').value = '';
         document.getElementById('candEmail').value = '';
         document.getElementById('candMobile').value = '';
+        if (document.getElementById('allowMobile')) document.getElementById('allowMobile').checked = false;
         document.getElementById('scheduledAt').value = '';
         document.getElementById('linkValidity').value = '24';
         const freshData = getAssessment(document.getElementById('role').value, document.getElementById('level').value);
@@ -1960,7 +1968,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         const id = 'ASMT-' + Date.now().toString(36).toUpperCase() + '-' + i;
         const token = Math.random().toString(36).substring(2, 12);
         const record = {
-          id, token, name, email, mobile: mobile || '', role: roleKey, level: levelKey,
+          id, token, name, email, mobile: mobile || '', role: roleKey, level: levelKey, allowMobile: false,
           duration, defaultDuration: assessmentData.duration, extraMinutes: 0,
           scheduledAt, linkValidityHours, linkValidFrom, expiresAt,
           totalMarks: 100, status: 'pending',

@@ -65,7 +65,7 @@
         </ul>
       </div>
       <div id="mobileBlock" class="alert alert-danger" style="display:none; text-align:left;">
-        <strong>Desktop or laptop required.</strong> This proctored assessment needs a webcam and cannot be taken on a mobile phone or tablet.
+        <strong>Desktop or laptop required.</strong> Mobile/tablet is not enabled for this assessment link. Please use a computer with a webcam, or ask the recruiter to enable mobile support.
       </div>
       <div style="text-align:center;">
         <button class="btn btn-primary" id="startBtn" onclick="startTest()" style="padding:0.95rem 2.1rem; font-size:1.08rem;border-radius:12px;">
@@ -364,12 +364,19 @@
         </div>
       `;
 
-      // ===== Mobile / tablet block =====
-      if (isMobileDevice()) {
+      // ===== Mobile / tablet block (only if admin did NOT allow mobile) =====
+      if (isMobileDevice() && !assessment.allowMobile) {
         document.getElementById('mobileBlock').style.display = 'block';
         document.getElementById('startBtn').disabled = true;
         document.getElementById('startBtn').style.opacity = '0.5';
         document.getElementById('startBtn').style.cursor = 'not-allowed';
+      } else if (isMobileDevice() && assessment.allowMobile) {
+        const mb = document.getElementById('mobileBlock');
+        if (mb) {
+          mb.className = 'alert alert-info';
+          mb.style.display = 'block';
+          mb.innerHTML = '<strong>Mobile allowed for this assessment.</strong> Keep the camera facing you, stay in a quiet well-lit place, and do not switch apps during the test.';
+        }
       }
     }
 
@@ -381,14 +388,24 @@
 
     // ========== Start Test ==========
     async function startTest() {
-      if (isMobileDevice()) {
-        alert('This assessment requires a desktop or laptop with a webcam.');
+      if (isMobileDevice() && !(assessment && assessment.allowMobile)) {
+        alert('This assessment requires a desktop or laptop with a webcam. Mobile is not enabled for your link.');
         return;
       }
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ 
-          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, 
-          audio: true 
+        const onMobile = isMobileDevice() && assessment.allowMobile;
+        // Mobile: request HD front camera for clearer proctor photos
+        const videoConstraints = onMobile
+          ? {
+              facingMode: { ideal: 'user' },
+              width: { ideal: 1280, min: 640 },
+              height: { ideal: 720, min: 480 },
+              frameRate: { ideal: 24, max: 30 }
+            }
+          : { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } };
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: videoConstraints,
+          audio: true
         });
         const video = document.getElementById('cameraFeed');
         video.srcObject = stream;
@@ -757,33 +774,46 @@
     function startPhotoCapture() {
       const video = document.getElementById('cameraFeed');
       const canvas = document.createElement('canvas');
-      // 3 photos every 1 minute (every 20 seconds)
+      // Captures a proctoring photo every 10 seconds throughout the whole test.
+      // Mobile (when allowed): higher resolution + JPEG quality for clearer face photos.
+      const onMobile = !!(assessment && assessment.allowMobile && isMobileDevice());
+      const MAX_CAPTURE_WIDTH = onMobile ? 1280 : 640;
+      const JPEG_QUALITY = onMobile ? 0.92 : 0.78;
+      const LOCAL_HISTORY_LIMIT = onMobile ? 4 : 6;
       const capture = () => {
         if (!video || !video.videoWidth || video.readyState < 2) return;
         try {
-          const w = video.videoWidth;
-          const h = video.videoHeight;
+          const scale = Math.min(1, MAX_CAPTURE_WIDTH / video.videoWidth);
+          const w = Math.round(video.videoWidth * scale);
+          const h = Math.round(video.videoHeight * scale);
           canvas.width = w;
           canvas.height = h;
           const ctx = canvas.getContext('2d');
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
           ctx.drawImage(video, 0, 0, w, h);
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          const dataUrl = canvas.toDataURL('image/jpeg', JPEG_QUALITY);
           assessment.lastPhoto = dataUrl;
           assessment.lastPhotoAt = new Date().toISOString();
           if (!assessment.photoHistory) assessment.photoHistory = [];
           assessment.photoHistory.push({ img: dataUrl, at: assessment.lastPhotoAt });
+          // Keep only the most recent few locally — the backend is the permanent record.
+          if (assessment.photoHistory.length > LOCAL_HISTORY_LIMIT) {
+            assessment.photoHistory = assessment.photoHistory.slice(-LOCAL_HISTORY_LIMIT);
+          }
+          if (!assessment.photoCount) assessment.photoCount = 0;
+          assessment.photoCount += 1;
           saveAssessment();
           sendPhotoToBackend(dataUrl, assessment.lastPhotoAt);
           const cnt = document.getElementById('photoCountHint');
-          const vcount = (assessment.videoHistory || []).length;
-          if (cnt) cnt.textContent = assessment.photoHistory.length + ' photos · ' + 'photos only';
-          console.log('Proctor photo captured');
+          if (cnt) cnt.textContent = assessment.photoCount + ' photos captured · every 10s';
+          console.log('Proctor photo captured (#' + assessment.photoCount + ')');
         } catch (e) {
           console.warn('Photo capture failed', e);
         }
       };
       setTimeout(capture, 3000);
-      photoInterval = setInterval(capture, 20000); // every 20 seconds = 3 per minute
+      photoInterval = setInterval(capture, 10000); // every 10 seconds
     }
 
     // 30-second video clip every 3 minutes
