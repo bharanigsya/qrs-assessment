@@ -529,7 +529,23 @@
     }
 
     async function syncAssessmentToBackend(retries = 3) {
-      const { photoHistory, videoHistory, ...payload } = assessment;
+      if (!assessment || !assessment.id) return false;
+      const { photoHistory, videoHistory, ...rest } = assessment;
+      // Always send critical result fields so admin never stays stuck on "in-progress"
+      const payload = Object.assign({}, rest, {
+        id: assessment.id,
+        token: assessment.token,
+        status: assessment.status,
+        score: assessment.score,
+        answers: assessment.answers || {},
+        flags: assessment.flags || [],
+        completedAt: assessment.completedAt || null,
+        startedAt: assessment.startedAt || null,
+        name: assessment.name,
+        email: assessment.email,
+        role: assessment.role,
+        level: assessment.level
+      });
       for (let attempt = 0; attempt <= retries; attempt++) {
         try {
           const res = await fetch(`${BACKEND_BASE}/api/assessments/${assessment.id}`, {
@@ -538,10 +554,12 @@
             body: JSON.stringify(payload)
           });
           if (res.ok) return true;
+          const errText = await res.text().catch(() => '');
+          console.warn('Backend sync HTTP ' + res.status + ':', errText.slice(0, 200));
         } catch (e) {
           console.warn('Backend sync attempt ' + (attempt + 1) + ' failed:', e);
         }
-        if (attempt < retries) await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt))); // 1s, 2s, 4s...
+        if (attempt < retries) await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
       }
       return false;
     }
@@ -552,15 +570,21 @@
     // sure a brief network blip or a slow/cold backend doesn't lose it permanently.
     function ensureResultDelivered() {
       let attempts = 0;
-      const maxAttempts = 20; // spaced 30s apart => up to ~10 minutes of retrying
+      const maxAttempts = 24;
       const tryOnce = async () => {
         attempts++;
-        const ok = await syncAssessmentToBackend(1);
-        if (ok) { console.log('Result confirmed delivered to backend.'); return; }
-        if (attempts < maxAttempts) setTimeout(tryOnce, 30000);
-        else console.warn('Could not confirm the result reached the backend after repeated attempts.');
+        const ok = await syncAssessmentToBackend(2);
+        if (ok) {
+          console.log('Result confirmed delivered to backend.');
+          return;
+        }
+        // Faster early retries (cold start on Render), then every 20s
+        const delay = attempts < 5 ? 4000 : 20000;
+        if (attempts < maxAttempts) setTimeout(tryOnce, delay);
+        else console.warn('Could not confirm result reached backend after repeated attempts.');
       };
-      setTimeout(tryOnce, 5000);
+      // First attempt almost immediately after submit
+      setTimeout(tryOnce, 400);
     }
 
     // Best-effort: send a single photo to the Flask backend so it's kept even if localStorage can't hold it all.
@@ -1111,20 +1135,44 @@
         stream.getTracks().forEach(t => t.stop());
       }
 
-      // Auto score MCQ only
+      // Auto-score MCQ only (normalize number/string answers so "0" === 0)
       let score = 0;
+      let mcqMarks = 0;
+      let mcqEarned = 0;
+      let mcqCount = 0;
+      let mcqCorrect = 0;
       questions.forEach(q => {
-        if (q.type === 'mcq' && answers[q.id] === q.correct) {
-          score += q.marks;
+        if (q.type === 'mcq') {
+          mcqCount++;
+          mcqMarks += (q.marks || 0);
+          const ans = answers[q.id];
+          const correct = q.correct;
+          const match = (ans !== undefined && ans !== null && correct !== undefined &&
+            Number(ans) === Number(correct));
+          if (match) {
+            score += (q.marks || 0);
+            mcqEarned += (q.marks || 0);
+            mcqCorrect++;
+          }
         }
       });
+      // Cap at 100 for safety
+      if (score > 100) score = 100;
 
       assessment.status = 'completed';
       assessment.completedAt = new Date().toISOString();
       assessment.score = score;
+      assessment.mcqScore = mcqEarned;
+      assessment.mcqTotal = mcqMarks;
+      assessment.mcqCorrect = mcqCorrect;
+      assessment.mcqCount = mcqCount;
       assessment.answers = answers;
       assessment.flags = flags;
       saveAssessment();
+      // Immediate strong push of final result (do not wait only on background retries)
+      syncAssessmentToBackend(4).then(function(ok) {
+        if (!ok) console.warn('Immediate post-submit sync failed — background retries continue');
+      });
       ensureResultDelivered();
 
       document.getElementById('testUI').style.display = 'none';
@@ -1132,7 +1180,7 @@
       showHelpFab(true);
       document.getElementById('scoreDisplay').innerHTML = `
         Recorded score (MCQ auto-checked): <strong>${score} / 100</strong><br>
-        <small style="color:var(--muted);">Written and voice responses, where applicable, are reviewed by the recruitment team.</small>
+        <small style="color:var(--muted);">MCQ: ${mcqCorrect}/${mcqCount} correct (${mcqEarned} of ${mcqMarks} MCQ marks). Coding / voice (if any) are reviewed manually by the team.</small>
         ${flags.length > 0 ? `<br><span style="color:var(--danger);">⚠️ ${flags.length} proctoring flag(s) recorded</span>` : ''}
       `;
     }

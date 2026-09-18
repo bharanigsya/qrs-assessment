@@ -558,9 +558,14 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
               <div class="form-group"><label>Scheduled start</label><input type="datetime-local" id="editScheduledAt"></div>
               <div class="form-group"><label>Link expires</label><input type="datetime-local" id="editExpiresAt"></div>
               <div class="form-group"><label>Note (optional)</label><input type="text" id="editStatusNote" placeholder="e.g. No show / asked to reschedule"></div>
+              <div class="form-group"><label>Final score (0–100)</label>
+                <input type="number" id="editFinalScore" min="0" max="100" step="1" placeholder="Leave blank = keep provisional MCQ">
+                <small style="color:#64748b;font-size:0.75rem;">Set after reviewing coding / voice. Blank keeps MCQ provisional score.</small>
+              </div>
             </div>
             <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.5rem;">
               <button class="btn btn-primary" onclick="saveInlineEdit()">Save changes</button>
+              <button class="btn btn-success" onclick="quickMarkCompleted()">✓ Mark completed</button>
               <button class="btn btn-warning" onclick="quickMarkStatus('missed')">Mark Missed</button>
               <button class="btn btn-outline" onclick="quickMarkStatus('expired')">Mark Link Expired</button>
               <button class="btn btn-outline" onclick="document.getElementById('inlineEditPanel').style.display='none'">Close</button>
@@ -1223,14 +1228,27 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       if (!a) return b;
       if (!b) return a;
       const rank = (x) => {
-        if (x.status === 'completed') return 4;
+        if (x.status === 'completed') return 5;
         if (x.status === 'flagged') return 3;
         if (x.status === 'in-progress') return 2;
-        return 1;
+        if (x.status === 'missed' || x.status === 'expired') return 1;
+        return 0;
       };
+      // Always prefer a finished result over in-progress
       if (rank(a) !== rank(b)) return rank(a) > rank(b) ? a : b;
-      const scoreA = (a.score != null ? 1 : 0) + (a.answers ? Object.keys(a.answers).length : 0);
-      const scoreB = (b.score != null ? 1 : 0) + (b.answers ? Object.keys(b.answers).length : 0);
+      // Prefer record that has a numeric score
+      const hasScoreA = a.score != null && a.score !== '';
+      const hasScoreB = b.score != null && b.score !== '';
+      if (hasScoreA && !hasScoreB) return a;
+      if (hasScoreB && !hasScoreA) return b;
+      if (hasScoreA && hasScoreB && Number(a.score) !== Number(b.score)) {
+        // Same status: keep higher score only if both completed; else keep richer answers
+        if (a.status === 'completed' && b.status === 'completed') {
+          return Number(a.score) >= Number(b.score) ? a : b;
+        }
+      }
+      const scoreA = (hasScoreA ? 1 : 0) + (a.answers ? Object.keys(a.answers).length : 0) + ((a.flags || []).length ? 1 : 0);
+      const scoreB = (hasScoreB ? 1 : 0) + (b.answers ? Object.keys(b.answers).length : 0) + ((b.flags || []).length ? 1 : 0);
       if (scoreA !== scoreB) return scoreA > scoreB ? a : b;
       const ta = new Date(a.completedAt || a.startedAt || a.createdAt || 0).getTime();
       const tb = new Date(b.completedAt || b.startedAt || b.createdAt || 0).getTime();
@@ -1802,7 +1820,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       document.getElementById('recentTable').innerHTML = recent.length ? recent.map(a =>
         '<tr><td><strong>' + a.name + '</strong><br><small style="color:#64748b">' + a.email + '</small></td>' +
         '<td>' + a.role + '</td><td><span class="badge badge-' + a.level + '">' + a.level + '</span></td>' +
-        '<td>' + statusBadge(a.status, a) + '</td><td>' + (a.score !== null ? a.score + '/100' : '—') + '</td>' +
+        '<td>' + statusBadge(a.status, a) + '</td><td>' + formatScoreCell(a) + '</td>' +
         '<td>' + (a.flags ? a.flags.length : 0) + '</td><td>' + new Date(a.createdAt).toLocaleDateString() + '</td></tr>'
       ).join('') : '<tr><td colspan="7" style="text-align:center;color:#94a3b8;">No assessments yet</td></tr>';
     }
@@ -1835,12 +1853,33 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       refreshAll();
     }
     function totalScore(a) {
-      const mcq = (a.score !== null && a.score !== undefined) ? a.score : 0;
-      const voice = (a.voiceScore !== null && a.voiceScore !== undefined) ? a.voiceScore : 0;
-      return mcq + voice;
+      // Prefer admin final score when set (after coding/voice review)
+      if (a.finalScore !== null && a.finalScore !== undefined && a.finalScore !== '') {
+        return Math.min(100, Number(a.finalScore) || 0);
+      }
+      const mcq = (a.score !== null && a.score !== undefined) ? Number(a.score) || 0 : 0;
+      const voice = (a.voiceScore !== null && a.voiceScore !== undefined) ? Number(a.voiceScore) || 0 : 0;
+      return Math.min(100, mcq + voice);
+    }
+    function isFinalScored(a) {
+      return a.finalScore !== null && a.finalScore !== undefined && a.finalScore !== '';
+    }
+    function formatScoreCell(a) {
+      if (a.status !== 'completed' && a.score == null && !isFinalScored(a)) return '—';
+      const t = totalScore(a);
+      if (isFinalScored(a)) {
+        return '<strong>' + t + '</strong>/100<br><small style="color:#059669;">Final</small>';
+      }
+      if (a.score != null) {
+        const mcqHint = (a.mcqCount != null)
+          ? ('MCQ ' + (a.mcqCorrect || 0) + '/' + a.mcqCount)
+          : 'MCQ only';
+        return '<strong>' + t + '</strong>/100<br><small style="color:#b45309;">Provisional · ' + mcqHint + '</small>';
+      }
+      return '—';
     }
     function resultBadge(a) {
-      if (a.status !== 'completed' && a.score === null) return '—';
+      if (a.status !== 'completed' && a.score == null && !isFinalScored(a)) return '—';
       const t = totalScore(a);
       const pass = getPassMark();
       if (t >= pass) return '<span class="badge" style="background:#d1fae5;color:#065f46;">PASS</span>';
@@ -2264,6 +2303,8 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       document.getElementById('editScheduledAt').value = toLocalInputValue(a.scheduledAt);
       document.getElementById('editExpiresAt').value = toLocalInputValue(a.expiresAt);
       document.getElementById('editStatusNote').value = a.statusNote || '';
+      const fsEl = document.getElementById('editFinalScore');
+      if (fsEl) fsEl.value = (a.finalScore !== null && a.finalScore !== undefined) ? a.finalScore : '';
       document.getElementById('inlineEditPanel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
@@ -2279,6 +2320,14 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       list[idx].scheduledAt = sched ? new Date(sched).toISOString() : null;
       list[idx].expiresAt = exp ? new Date(exp).toISOString() : list[idx].expiresAt;
       list[idx].statusNote = (document.getElementById('editStatusNote').value || '').trim();
+      const fsRaw = document.getElementById('editFinalScore') ? document.getElementById('editFinalScore').value : '';
+      if (fsRaw !== '' && fsRaw !== null && fsRaw !== undefined) {
+        const fs = parseInt(fsRaw, 10);
+        if (isNaN(fs) || fs < 0 || fs > 100) return alert('Final score must be 0–100');
+        list[idx].finalScore = fs;
+        list[idx].finalScoreAt = new Date().toISOString();
+        list[idx].finalScoreBy = ssGet('qrs_admin_user') || 'admin';
+      }
       list[idx].statusUpdatedAt = new Date().toISOString();
       list[idx].statusUpdatedBy = ssGet('qrs_admin_user') || 'admin';
       saveAssessments(list);
@@ -2288,7 +2337,35 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       alert('Updated: ' + list[idx].name + ' (' + st + ')');
     }
 
-    function quickMarkStatus(st) {
+    function markAsCompleted(id) {
+      const list = getAssessments();
+      const idx = list.findIndex(x => x.id === id);
+      if (idx < 0) return alert('Candidate not found');
+      const a = list[idx];
+      if (a.status === 'completed') {
+        alert('Already completed.');
+        return;
+      }
+      if (!confirm('Mark "' + a.name + '" as Completed?\n\nUse when the candidate finished but status is still In progress.')) return;
+      list[idx].status = 'completed';
+      if (!list[idx].completedAt) list[idx].completedAt = new Date().toISOString();
+      list[idx].statusNote = (list[idx].statusNote ? list[idx].statusNote + ' · ' : '') + 'Admin marked completed';
+      list[idx].statusUpdatedAt = new Date().toISOString();
+      list[idx].statusUpdatedBy = ssGet('qrs_admin_user') || 'admin';
+      saveAssessments(list);
+      if (typeof logActivity === 'function') logActivity('Marked completed', a.name);
+      refreshAll();
+      alert('Marked completed: ' + a.name + (a.score != null ? ' (MCQ score ' + a.score + ')' : ''));
+    }
+    function quickMarkCompleted() {
+      document.getElementById('editCandStatus').value = 'completed';
+      if (!document.getElementById('editStatusNote').value) {
+        document.getElementById('editStatusNote').value = 'Admin marked completed';
+      }
+      saveInlineEdit();
+    }
+
+        function quickMarkStatus(st) {
       document.getElementById('editCandStatus').value = st;
       if (st === 'missed' && !document.getElementById('editStatusNote').value) {
         document.getElementById('editStatusNote').value = 'Candidate did not attend';
@@ -2387,7 +2464,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         (isAdmin() ? '<td><input type="checkbox" class="result-select" value="' + a.id + '"></td>' : '<td></td>') +
         '<td><strong>' + a.name + '</strong><br><small style="color:#64748b">' + a.email + '</small></td>' +
         '<td>' + a.role + '</td><td><span class="badge badge-' + a.level + '">' + a.level + '</span></td>' +
-        '<td>' + statusBadge(a.status, a) + (a.status === 'in-progress' ? ' <span class="badge" style="background:#d1fae5;color:#065f46;">● attending</span>' : '') + (a.status === 'completed' ? ' <span class="badge" style="background:#e0e7ff;color:#3730a3;">finished</span>' : '') + (a.statusNote ? '<br><small style="color:#9a3412;">' + a.statusNote + '</small>' : '') + (a.status === 'expired' && a.expiresAt ? '<br><small style="color:#9d174d;">Exp: ' + new Date(a.expiresAt).toLocaleString() + '</small>' : '') + (a.status === 'missed' ? '<br><small style="color:#c2410c;">Did not attend</small>' : '') + '</td><td>' + (a.score !== null ? '<strong>' + a.score + '</strong>/100' : '—') + '</td>' +
+        '<td>' + statusBadge(a.status, a) + (a.status === 'in-progress' ? ' <span class="badge" style="background:#d1fae5;color:#065f46;">● attending</span>' : '') + (a.status === 'completed' ? ' <span class="badge" style="background:#e0e7ff;color:#3730a3;">finished</span>' : '') + (a.statusNote ? '<br><small style="color:#9a3412;">' + a.statusNote + '</small>' : '') + (a.status === 'expired' && a.expiresAt ? '<br><small style="color:#9d174d;">Exp: ' + new Date(a.expiresAt).toLocaleString() + '</small>' : '') + (a.status === 'missed' ? '<br><small style="color:#c2410c;">Did not attend</small>' : '') + '</td><td>' + formatScoreCell(a) + '</td>' +
         '<td>' + resultBadge(a) + '</td>' +
         '<td>' + (a.flags && a.flags.length ? '<span class="flag-count">' + a.flags.length + ' 🚩</span>' : '0') + '</td>' +
         '<td><select style="font-size:0.75rem;padding:0.2rem;max-width:100px;" onchange="setCandidateTag(\'' + a.id + '\', this.value)">' +
@@ -2402,6 +2479,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         '<button type="button" class="menu-dots" onclick="toggleActionMenu(event,\'' + a.id + '\')" title="More actions" aria-label="More actions">⋮</button>' +
         '<div class="action-menu" id="menu-' + a.id + '">' +
           '<button type="button" onclick="closeAllMenus(); openInlineEdit(\'' + a.id + '\')">✏️ Edit time / status</button>' +
+          (a.status !== 'completed' ? '<button type="button" onclick="closeAllMenus(); markAsCompleted(\'' + a.id + '\')">✓ Mark as completed</button>' : '') +
           (a.status !== 'completed' ? '<button type="button" onclick="closeAllMenus(); viewDetail(\'' + a.id + '\'); setTimeout(function(){resendLink(\'' + a.id + '\')},200)">🔗 Resend new link</button>' : '') +
           '<button type="button" onclick="closeAllMenus(); copyWhatsApp(\'' + a.id + '\')">💬 WhatsApp message</button>' +
           '<button type="button" onclick="closeAllMenus(); extendLinkOneHour(\'' + a.id + '\')">⏰ Extend link +1 hour</button>' +
@@ -2442,6 +2520,19 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         const v = parseInt(vEl.value, 10);
         if (isNaN(v) || v < 0 || v > 50) return alert('Voice score must be 0-50');
         list[idx].voiceScore = v;
+      }
+      const fEl = document.getElementById('finalScoreInput');
+      if (fEl && fEl.value !== '') {
+        const f = parseInt(fEl.value, 10);
+        if (isNaN(f) || f < 0 || f > 100) return alert('Final score must be 0–100');
+        list[idx].finalScore = f;
+        list[idx].finalScoreAt = new Date().toISOString();
+        list[idx].finalScoreBy = ssGet('qrs_admin_user') || 'admin';
+        // Setting final score implies completed review
+        if (list[idx].status !== 'completed') {
+          list[idx].status = 'completed';
+          if (!list[idx].completedAt) list[idx].completedAt = new Date().toISOString();
+        }
       }
       if (tEl) list[idx].tag = tEl.value || '';
       if (nEl) list[idx].adminNote = nEl.value || '';
@@ -2619,8 +2710,11 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         '<div class="detail-row"><span>Mobile</span><span>' + (a.mobile || '—') + '</span></div>' +
         '<div class="detail-row"><span>Role / Level</span><span>' + a.role + ' / ' + a.level + '</span></div>' +
         '<div class="detail-row"><span>Status</span><span>' + statusBadge(a.status, a) + (a.statusNote ? ' — ' + a.statusNote : '') + '</span></div>' +
-        '<div class="detail-row"><span>MCQ Score</span><strong>' + (a.score !== null ? a.score + ' / 100' : 'Not submitted') + '</strong></div>' +
-        '<div class="detail-row"><span>Voice Score</span><strong>' + (a.voiceScore !== undefined ? a.voiceScore : 'Not scored') + '</strong></div>' +
+        '<div class="detail-row"><span>MCQ (auto)</span><strong>' + (a.score != null ? a.score + ' / 100' : 'Not submitted') + (a.mcqCount != null ? ' <small style="color:#64748b;">(' + (a.mcqCorrect||0) + '/' + a.mcqCount + ' correct)</small>' : '') + '</strong></div>' +
+        '<div class="detail-row"><span>Voice score</span><strong>' + (a.voiceScore !== undefined && a.voiceScore !== null ? a.voiceScore : 'Not scored') + '</strong></div>' +
+        '<div class="detail-row"><span>Final score</span><strong style="color:' + (isFinalScored(a) ? '#059669' : '#b45309') + ';">' +
+          (isFinalScored(a) ? (totalScore(a) + ' / 100 · Final') : (a.score != null || a.voiceScore != null ? (totalScore(a) + ' / 100 · Provisional') : '—')) +
+        '</strong></div>' +
         '<div class="detail-row"><span>Total / Result</span><strong>' + totalScore(a) + ' · ' + (a.score !== null ? (totalScore(a) >= getPassMark() ? 'PASS' : 'FAIL') : '—') + '</strong></div>' +
         '<div class="detail-row"><span>Created</span><span>' + new Date(a.createdAt).toLocaleString() + '</span></div>' +
         '<div class="detail-row"><span>Test Duration</span><span>' + (a.duration || '—') + ' min</span></div>' +
@@ -2636,10 +2730,13 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
 
       // Manual voice scoring + feedback in one panel
       html += '<div style="margin-top:1rem;padding:0.9rem;background:#f8fafc;border-radius:10px;border:1px solid #e2e8f0;">' +
-        '<strong>Review panel — Voice score & notes</strong>' +
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.8rem;margin-top:0.55rem;">' +
+        '<strong>Review panel — Final score, voice & notes</strong>' +
+        '<p style="font-size:0.8rem;color:#64748b;margin:0.35rem 0 0;">MCQ is auto-scored. After reviewing coding/voice, set a <strong>Final score (0–100)</strong>.</p>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.8rem;margin-top:0.55rem;">' +
+        '<div><label style="font-size:0.8rem;color:#64748b;">Final score (0–100)</label><br>' +
+        '<input type="number" id="finalScoreInput" min="0" max="100" value="' + (isFinalScored(a) ? a.finalScore : '') + '" placeholder="e.g. 78" style="max-width:120px;margin-top:0.25rem;"></div>' +
         '<div><label style="font-size:0.8rem;color:#64748b;">Voice score (0-50)</label><br>' +
-        '<input type="number" id="voiceScoreInput" min="0" max="50" value="' + (a.voiceScore !== undefined ? a.voiceScore : '') + '" style="max-width:120px;margin-top:0.25rem;"></div>' +
+        '<input type="number" id="voiceScoreInput" min="0" max="50" value="' + (a.voiceScore !== undefined && a.voiceScore !== null ? a.voiceScore : '') + '" style="max-width:120px;margin-top:0.25rem;"></div>' +
         '<div><label style="font-size:0.8rem;color:#64748b;">Tag</label><br>' +
         '<select id="detailTagSelect" style="margin-top:0.25rem;max-width:140px;">' +
         '<option value=""' + (!a.tag?' selected':'') + '>—</option>' +

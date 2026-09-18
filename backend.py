@@ -404,6 +404,16 @@ def upsert_assessment(aid, body, merge_existing=True):
                     if k == "videoHistory" and not v and existing.get("videoHistory"):
                         continue
                     merged[k] = v
+                # Never let a late/stale sync downgrade a finished test back to in-progress/pending
+                if existing.get("status") == "completed":
+                    if merged.get("status") in ("pending", "in-progress", "expired", "missed"):
+                        merged["status"] = "completed"
+                    if existing.get("score") is not None and merged.get("score") is None:
+                        merged["score"] = existing.get("score")
+                    if existing.get("completedAt") and not merged.get("completedAt"):
+                        merged["completedAt"] = existing.get("completedAt")
+                    if existing.get("answers") and not merged.get("answers"):
+                        merged["answers"] = existing.get("answers")
             else:
                 merged = dict(body)
                 merged["id"] = aid
@@ -439,6 +449,15 @@ def upsert_assessment(aid, body, merge_existing=True):
                     if k == "videoHistory" and not v and a.get("videoHistory"):
                         continue
                     merged[k] = v
+                if a.get("status") == "completed":
+                    if merged.get("status") in ("pending", "in-progress", "expired", "missed"):
+                        merged["status"] = "completed"
+                    if a.get("score") is not None and merged.get("score") is None:
+                        merged["score"] = a.get("score")
+                    if a.get("completedAt") and not merged.get("completedAt"):
+                        merged["completedAt"] = a.get("completedAt")
+                    if a.get("answers") and not merged.get("answers"):
+                        merged["answers"] = a.get("answers")
                 data[i] = merged
                 found = merged
             else:
@@ -926,6 +945,7 @@ def create_assessment():
         "photoHistory": body.get("photoHistory") or [],
         "lastVideoAt": body.get("lastVideoAt"),
         "videoHistory": body.get("videoHistory") or [],
+        "allowMobile": bool(body.get("allowMobile")),
     }
     data.append(item)
     save_assessments(data)
