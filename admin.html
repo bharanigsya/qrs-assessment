@@ -253,6 +253,16 @@
       <p style="margin-top:0.6rem; font-size:0.75rem; color:#94a3b8; text-align:center;">
         Admin full access · Coordinator: assign + results + flags only
       </p>
+      <details style="margin-top:0.9rem;font-size:0.78rem;color:#64748b;">
+        <summary style="cursor:pointer;color:#4f46e5;">Backend connection help</summary>
+        <p style="margin:0.5rem 0 0.35rem;">If login says it cannot reach the server, open the site from:</p>
+        <p style="margin:0;word-break:break-all;"><a href="https://qrs-assessment.onrender.com/admin.html" target="_blank" rel="noopener">https://qrs-assessment.onrender.com/admin.html</a></p>
+        <p style="margin:0.45rem 0 0;">Or set backend URL (then click Login again):</p>
+        <input type="text" id="loginBackendUrl" placeholder="https://qrs-assessment.onrender.com" style="width:100%;margin-top:0.3rem;padding:0.4rem 0.55rem;border:1px solid #e2e8f0;border-radius:8px;font-size:0.8rem;">
+        <button type="button" class="btn btn-outline" style="width:100%;margin-top:0.4rem;padding:0.4rem;font-size:0.8rem;" onclick="saveLoginBackendUrl()">Save backend URL</button>
+        <button type="button" class="btn btn-outline" style="width:100%;margin-top:0.35rem;padding:0.4rem;font-size:0.8rem;" onclick="clearLoginBackendUrl()">Clear saved URL (use default)</button>
+        <p id="loginBackendHint" style="margin:0.4rem 0 0;font-size:0.72rem;color:#94a3b8;"></p>
+      </details>
     </div>
   </div>
 
@@ -922,7 +932,30 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
 
     // Shared backend URL. Override with localStorage key `qrs_backend_base` if admin.html is hosted separately.
     const DEFAULT_BACKEND_BASE = 'https://qrs-assessment.onrender.com';
-    const BACKEND_BASE = (localStorage.getItem('qrs_backend_base') || DEFAULT_BACKEND_BASE).replace(/\/$/, '');
+    function resolveBackendBase() {
+      try {
+        const stored = (localStorage.getItem('qrs_backend_base') || '').trim();
+        if (stored) return stored.replace(/\/$/, '');
+      } catch (e) {}
+      // When admin.html is served by the same Flask/Render host, use same origin
+      try {
+        if (location.protocol === 'http:' || location.protocol === 'https:') {
+          const host = location.hostname || '';
+          // Production host (Render etc.)
+          if (host && host !== 'localhost' && host !== '127.0.0.1') {
+            return location.origin.replace(/\/$/, '');
+          }
+          // Local Flask on :5000
+          if (location.port === '5000' || !location.port) {
+            return location.origin.replace(/\/$/, '');
+          }
+          // Static server (e.g. :8080) → talk to local Flask
+          return 'http://127.0.0.1:5000';
+        }
+      } catch (e) {}
+      return DEFAULT_BACKEND_BASE;
+    }
+    let BACKEND_BASE = resolveBackendBase();
 
     // ===== Session — real backend-issued & backend-verified token =====
     function authToken() {
@@ -977,36 +1010,88 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
     }
 
     async function doLogin() {
-      const user = (document.getElementById('loginUser').value || '').trim();
-      const pass = document.getElementById('loginPass').value || '';
+      const user = document.getElementById('loginUser').value.trim();
+      const pass = document.getElementById('loginPass').value;
       const err = document.getElementById('loginError');
       err.style.display = 'none';
-      try {
-        const res = await fetch(`${BACKEND_BASE}/api/admin/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user, pass })
-        });
-        const data = await res.json();
-        if (res.ok && data.ok) {
-          ssSet('qrs_admin_logged', '1');
-          ssSet('qrs_admin_role', data.role || 'coordinator');
-          ssSet('qrs_admin_user', data.user);
-          ssSet('qrs_admin_token', data.token);
-          document.getElementById('loginPass').value = '';
-          showApp();
-          applyRoleUI();
-        } else {
-          err.style.display = 'block';
-          err.className = 'alert alert-danger';
-          err.textContent = data.error || 'Invalid username or password.';
-        }
-      } catch (e) {
+      if (!user || !pass) {
         err.style.display = 'block';
-        err.className = 'alert alert-danger';
-        err.textContent = 'Could not reach the backend server. Make sure it is running, then try again.';
+        err.textContent = 'Enter username and password.';
+        return;
       }
+      // Refresh base in case user just saved it
+      try { BACKEND_BASE = resolveBackendBase(); } catch (e) {}
+      const bases = [];
+      const push = (u) => { if (u && !bases.includes(u)) bases.push(u); };
+      push(BACKEND_BASE);
+      push(DEFAULT_BACKEND_BASE);
+      try {
+        if (location.protocol === 'http:' || location.protocol === 'https:') push(location.origin.replace(/\/$/, ''));
+      } catch (e) {}
+
+      let lastErr = '';
+      for (const base of bases) {
+        try {
+          const res = await fetch(base + '/api/admin/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user: user, pass: pass })
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.ok && data.ok) {
+            BACKEND_BASE = base;
+            try { localStorage.setItem('qrs_backend_base', base); } catch (e) {}
+            ssSet('qrs_admin_logged', '1');
+            ssSet('qrs_admin_token', data.token || '');
+            ssSet('qrs_admin_user', data.user || user);
+            ssSet('qrs_admin_role', data.role || 'admin');
+            document.getElementById('loginScreen').style.display = 'none';
+            document.getElementById('adminApp').style.display = 'block';
+            const badge = document.getElementById('headerRoleBadge');
+            if (badge) badge.textContent = (data.role === 'admin' ? 'Admin' : 'Coordinator');
+            if (typeof applyRoleVisibility === 'function') applyRoleVisibility();
+            if (typeof refreshAll === 'function') refreshAll();
+            if (typeof pullFromBackend === 'function') pullFromBackend().then(function(){ if (typeof refreshAll === 'function') refreshAll(); });
+            return;
+          }
+          if (res.status === 401) {
+            err.style.display = 'block';
+            err.textContent = data.error || 'Invalid username or password.';
+            return;
+          }
+          lastErr = 'HTTP ' + res.status + ' from ' + base;
+        } catch (e) {
+          lastErr = (e && e.message) ? e.message : String(e);
+          console.warn('Login fetch failed for', base, e);
+        }
+      }
+      err.style.display = 'block';
+      err.innerHTML = 'Could not reach the backend server.<br><small style="color:#991b1b;">Tried: ' + bases.join(' · ') +
+        '</small><br><small>1) Open <a href="https://qrs-assessment.onrender.com/admin.html" style="color:#4f46e5;">qrs-assessment.onrender.com/admin.html</a> (not a local file).<br>2) Wait 30–60s if Render was sleeping, then try again.<br>3) Or expand “Backend connection help” below and set the URL.</small>';
     }
+
+    function saveLoginBackendUrl() {
+      const el = document.getElementById('loginBackendUrl');
+      const hint = document.getElementById('loginBackendHint');
+      let v = (el && el.value ? el.value : '').trim().replace(/\/$/, '');
+      if (!v) {
+        if (hint) hint.textContent = 'Enter a URL like https://qrs-assessment.onrender.com';
+        return;
+      }
+      if (!/^https?:\/\//i.test(v)) v = 'https://' + v;
+      try { localStorage.setItem('qrs_backend_base', v); } catch (e) {}
+      BACKEND_BASE = v;
+      if (hint) hint.textContent = 'Saved. Backend = ' + v + ' — click Login again.';
+    }
+    function clearLoginBackendUrl() {
+      try { localStorage.removeItem('qrs_backend_base'); } catch (e) {}
+      BACKEND_BASE = resolveBackendBase();
+      const el = document.getElementById('loginBackendUrl');
+      if (el) el.value = '';
+      const hint = document.getElementById('loginBackendHint');
+      if (hint) hint.textContent = 'Cleared. Using: ' + BACKEND_BASE;
+    }
+
 
     async function addCoordinator() {
       if (!isAdmin()) return alert('Admin only');
@@ -3420,6 +3505,18 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
     }
 
     function applySavedTheme() {
+      try {
+        const hint = document.getElementById('loginBackendHint');
+        if (hint) hint.textContent = 'Current backend: ' + (typeof BACKEND_BASE !== 'undefined' ? BACKEND_BASE : resolveBackendBase());
+        const urlEl = document.getElementById('loginBackendUrl');
+        if (urlEl && !urlEl.value) {
+          try {
+            const s = localStorage.getItem('qrs_backend_base');
+            if (s) urlEl.value = s;
+          } catch (e) {}
+        }
+      } catch (e) {}
+
       if (lsGet('qrs_theme') === 'dark') {
         document.body.classList.add('theme-dark');
       }
