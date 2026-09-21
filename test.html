@@ -208,6 +208,12 @@
     const FACE_MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
     let faceModelsReady = false;
     let assessment = null;
+    // Corrects for the candidate's device clock being wrong (common on phones/old laptops),
+    // which otherwise causes false "link expired" / "not yet started" screens. Set once in
+    // init() from the backend's own clock via /api/health. nowMs() is what all expiry and
+    // scheduled-start checks use — never raw Date.now() for those.
+    let serverOffsetMs = 0;
+    function nowMs() { return Date.now() + serverOffsetMs; }
     let questions = [];
     let currentIndex = 0;
     let answers = {};
@@ -220,6 +226,25 @@
     let isRecording = false;
     let faceCheckInterval = null;
     let noFaceCount = 0;
+    const SESSION_KEY = 'qrs_test_session_';
+    function getClientSessionId(aid) {
+      const k = SESSION_KEY + (aid || '');
+      try {
+        let id = sessionStorage.getItem(k);
+        if (!id) {
+          id = 'S-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+          sessionStorage.setItem(k, id);
+        }
+        return id;
+      } catch (e) {
+        return 'S-mem-' + Date.now();
+      }
+    }
+    function touchActivity() {
+      if (!assessment) return;
+      assessment.lastActivityAt = new Date().toISOString();
+    }
+
 
     // ========== Init ==========
     async function init() {
@@ -233,32 +258,75 @@
         return;
       }
 
+      // Get the backend's own clock first, so expiry/schedule checks below aren't fooled
+      // by a candidate's device having the wrong date/time.
+      try {
+        const healthRes = await fetch(`${BACKEND_BASE}/api/health`);
+        if (healthRes.ok) {
+          const health = await healthRes.json();
+          if (health && health.time) {
+            serverOffsetMs = new Date(health.time).getTime() - Date.now();
+          }
+        }
+      } catch (e) {
+        console.warn('Could not reach backend clock — using device time as-is:', e);
+      }
+
       const list = JSON.parse(localStorage.getItem('assessments') || '[]');
       assessment = list.find(a => a.id === id && a.token === token);
 
-      // Not on this device's local storage — this link was likely generated on a
-      // different computer (e.g. the admin's PC). Fall back to the shared backend.
-      if (!assessment) {
-        try {
-          const res = await fetch(`${BACKEND_BASE}/api/assessments/${id}?token=${encodeURIComponent(token)}`);
-          if (res.ok) {
-            const remote = await res.json();
-            if (remote && remote.token === token) {
+      // Always re-check the backend for the LATEST timing/status — a cached local copy can
+      // otherwise go stale (e.g. admin extended the link or rescheduled it after the candidate
+      // first opened it) and keep showing "expired" forever even after being fixed on the server.
+      try {
+        const res = await fetch(`${BACKEND_BASE}/api/assessments/${id}?token=${encodeURIComponent(token)}`);
+        if (res.ok) {
+          const remote = await res.json();
+          if (remote && remote.token === token) {
+            if (assessment) {
+              // Keep everything locally-tracked (answers, in-progress status, flags, score) —
+              // only trust the server for the timing fields, since those are what go stale.
+              Object.assign(assessment, {
+                expiresAt: remote.expiresAt,
+                scheduledAt: remote.scheduledAt,
+                duration: remote.duration,
+                linkValidityHours: remote.linkValidityHours,
+              });
+            } else {
               assessment = remote;
-              // Cache locally for the rest of this session (answers, flags, etc.)
-              const merged = list.filter(a => a.id !== id);
-              merged.push(assessment);
-              localStorage.setItem('assessments', JSON.stringify(merged));
             }
+            const merged = list.filter(a => a.id !== id);
+            merged.push(assessment);
+            localStorage.setItem('assessments', JSON.stringify(merged));
           }
-        } catch (e) {
-          console.warn('Backend lookup failed (backend may not be running):', e);
         }
+      } catch (e) {
+        console.warn('Backend lookup failed (backend may not be running) — using cached copy if any:', e);
       }
 
       if (!assessment) {
         document.getElementById('invalidUI').style.display = 'block';
         return;
+      }
+
+
+      // Block second device if another session is actively taking the test
+      if (assessment.status === 'in-progress' || assessment.status === 'flagged') {
+        const mySid = getClientSessionId(assessment.id);
+        const activeSid = assessment.sessionId;
+        const lastAct = assessment.lastActivityAt ? new Date(assessment.lastActivityAt).getTime() : 0;
+        const recent = lastAct && (Date.now() - lastAct) < 3 * 60 * 1000;
+        if (activeSid && activeSid !== mySid && recent) {
+          document.getElementById('invalidUI').style.display = 'block';
+          document.getElementById('invalidUI').innerHTML =
+            '<div class="card" style="max-width:520px;margin:2rem auto;text-align:center;">' +
+            '<h2 style="color:var(--danger);">Test already in progress</h2>' +
+            '<p>This assessment is open on <strong>another device or browser tab</strong>.</p>' +
+            '<p style="color:var(--muted);font-size:0.9rem;">Close the other tab and wait 3 minutes, then refresh — or ask the recruiter to help.</p></div>';
+          return;
+        }
+        assessment.sessionId = mySid;
+        touchActivity();
       }
 
       if (assessment.status === 'completed') {
@@ -284,7 +352,7 @@
       }
 
       // ===== Link expiry check =====
-      if (assessment.expiresAt && Date.now() > new Date(assessment.expiresAt).getTime()) {
+      if (assessment.expiresAt && nowMs() > new Date(assessment.expiresAt).getTime()) {
         document.getElementById('linkExpiredUI').style.display = 'block';
         showHelpFab(true);
         document.getElementById('expiredMsg').innerHTML =
@@ -296,17 +364,17 @@
       // ===== Scheduled start check (not open yet) =====
       if (assessment.scheduledAt) {
         const scheduledMs = new Date(assessment.scheduledAt).getTime();
-        if (Date.now() < scheduledMs) {
+        if (nowMs() < scheduledMs) {
           document.getElementById('notYetUI').style.display = 'block';
           showHelpFab(true);
-          const leftMin = Math.max(1, Math.ceil((scheduledMs - Date.now()) / 60000));
+          const leftMin = Math.max(1, Math.ceil((scheduledMs - nowMs()) / 60000));
           const unlockAt = new Date(assessment.scheduledAt);
           document.getElementById('notYetMsg').innerHTML =
             '<div style="font-size:1.05rem;margin-bottom:0.5rem;">Locked until <strong>' + unlockAt.toLocaleString() + '</strong></div>' +
             '<div id="lockCountdown" style="font-size:1.6rem;font-weight:700;color:#4f46e5;margin:0.5rem 0;">--:--:--</div>' +
             '<div style="font-size:0.9rem;">Please wait. This page updates automatically and will open when the time starts.</div>';
           const tick = () => {
-            const left = unlockAt.getTime() - Date.now();
+            const left = unlockAt.getTime() - nowMs();
             const el = document.getElementById('lockCountdown');
             if (!el) return;
             if (left <= 0) { location.reload(); return; }
@@ -317,7 +385,7 @@
           };
           tick();
           setInterval(tick, 1000);
-          setTimeout(() => location.reload(), Math.min(15000, Math.max(3000, unlockAt.getTime() - Date.now())));
+          setTimeout(() => location.reload(), Math.min(15000, Math.max(3000, unlockAt.getTime() - nowMs())));
           return;
         }
       }
@@ -418,8 +486,20 @@
         return;
       }
 
+      const mySid = getClientSessionId(assessment.id);
+      if ((assessment.status === 'in-progress' || assessment.status === 'flagged') &&
+          assessment.sessionId && assessment.sessionId !== mySid) {
+        const lastAct = assessment.lastActivityAt ? new Date(assessment.lastActivityAt).getTime() : 0;
+        if (lastAct && (Date.now() - lastAct) < 3 * 60 * 1000) {
+          alert('This test is already in progress on another device or tab. Close the other session or wait 3 minutes.');
+          return;
+        }
+      }
+
       assessment.status = 'in-progress';
-      assessment.startedAt = new Date().toISOString();
+      assessment.startedAt = assessment.startedAt || new Date().toISOString();
+      assessment.sessionId = mySid;
+      touchActivity();
       saveAssessment();
 
       document.getElementById('preStart').style.display = 'none';
@@ -433,7 +513,12 @@
       startFaceDetection();
       assessment.photoHistory = assessment.photoHistory || [];
       assessment.videoHistory = assessment.videoHistory || [];
-      startPhotoCapture();
+      if (assessment.storePhotos !== false) {
+        startPhotoCapture();
+      } else {
+        const cnt = document.getElementById('photoCountHint');
+        if (cnt) cnt.textContent = 'Proctor photos disabled for this link';
+      }
       /* startVideoClips disabled */
       startTimer();
       renderQuestion();
@@ -501,6 +586,7 @@
     let backendOverflow = false; // once local storage fills, keep sending new photos straight to backend
 
     function saveAssessment() {
+      if (assessment && (assessment.status === 'in-progress' || assessment.status === 'flagged')) { try { touchActivity(); } catch (e) {} }
       const list = JSON.parse(lsGet('assessments') || '[]');
       const idx = list.findIndex(a => a.id === assessment.id);
       if (idx === -1) return;
@@ -796,9 +882,13 @@
     let activeClipRecorder = null;
 
     function startPhotoCapture() {
+      if (assessment && assessment.storePhotos === false) {
+        console.log('Photo capture skipped — storePhotos is off');
+        return;
+      }
       const video = document.getElementById('cameraFeed');
       const canvas = document.createElement('canvas');
-      // Captures a proctoring photo every 10 seconds throughout the whole test.
+      // Captures a proctoring photo every 1 minute throughout the whole test.
       // Mobile (when allowed): higher resolution + JPEG quality for clearer face photos.
       const onMobile = !!(assessment && assessment.allowMobile && isMobileDevice());
       const MAX_CAPTURE_WIDTH = onMobile ? 1280 : 640;
@@ -830,14 +920,14 @@
           saveAssessment();
           sendPhotoToBackend(dataUrl, assessment.lastPhotoAt);
           const cnt = document.getElementById('photoCountHint');
-          if (cnt) cnt.textContent = assessment.photoCount + ' photos captured · every 10s';
+          if (cnt) cnt.textContent = assessment.photoCount + ' photos captured · every 1 min';
           console.log('Proctor photo captured (#' + assessment.photoCount + ')');
         } catch (e) {
           console.warn('Photo capture failed', e);
         }
       };
-      setTimeout(capture, 3000);
-      photoInterval = setInterval(capture, 10000); // every 10 seconds
+      setTimeout(capture, 5000); // first photo ~5s after start
+      photoInterval = setInterval(capture, 60000); // every 1 minute
     }
 
     // 30-second video clip every 3 minutes
