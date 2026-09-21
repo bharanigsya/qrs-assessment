@@ -449,6 +449,11 @@
             📱 Allow mobile / tablet for this candidate (default: laptop only)
           </label>
           <small style="display:block;color:var(--muted);margin:0.25rem 0 0 1.6rem;font-size:0.8rem;">If unchecked, phones and tablets are blocked. Enable only when you intentionally allow mobile.</small>
+          <label style="display:flex;align-items:center;gap:0.5rem;margin-top:0.65rem;font-size:0.88rem;font-weight:500;cursor:pointer;">
+            <input type="checkbox" id="storePhotos" checked style="width:auto;">
+            📷 Store proctor photos (1 photo every 1 minute)
+          </label>
+          <small style="display:block;color:var(--muted);margin:0.25rem 0 0 1.6rem;font-size:0.8rem;">Uncheck to save bandwidth — scores & answers still save; no face photos stored.</small>
 
           <div style="margin-top:1rem;display:flex;gap:0.75rem;flex-wrap:wrap;">
             <button class="btn btn-primary" onclick="createAssessment()">Generate Secure Link (100 Marks)</button>
@@ -745,8 +750,8 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
             <button class="btn btn-outline" onclick="downloadBackup()">⬇ Download Backup (JSON)</button>
             <button class="btn btn-primary" onclick="restoreLocalToBackend()">⬆ Restore browser data → server</button>
             <label class="btn btn-outline" style="cursor:pointer;">
-              ⬆ Restore from Backup
-              <input type="file" accept="application/json" onchange="restoreBackup(this)" style="display:none;">
+              ⬆ Restore from Backup JSON
+              <input type="file" accept="application/json,.json" onchange="restoreBackup(this)" style="display:none;">
             </label>
           </div>
 
@@ -1722,6 +1727,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       const record = {
         id, token, name, email, mobile, role, level,
         allowMobile: document.getElementById('allowMobile') ? document.getElementById('allowMobile').checked : false,
+        storePhotos: document.getElementById('storePhotos') ? document.getElementById('storePhotos').checked : true,
         duration,
         defaultDuration: assessmentData.duration,
         scheduledAt,
@@ -1796,6 +1802,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         document.getElementById('candEmail').value = '';
         document.getElementById('candMobile').value = '';
         if (document.getElementById('allowMobile')) document.getElementById('allowMobile').checked = false;
+        if (document.getElementById('storePhotos')) document.getElementById('storePhotos').checked = true;
         document.getElementById('scheduledAt').value = '';
         document.getElementById('linkValidity').value = '24';
         const freshData = getAssessment(document.getElementById('role').value, document.getElementById('level').value);
@@ -2092,7 +2099,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         const id = 'ASMT-' + Date.now().toString(36).toUpperCase() + '-' + i;
         const token = Math.random().toString(36).substring(2, 12);
         const record = {
-          id, token, name, email, mobile: mobile || '', role: roleKey, level: levelKey, allowMobile: false,
+          id, token, name, email, mobile: mobile || '', role: roleKey, level: levelKey, allowMobile: false, storePhotos: true,
           duration, defaultDuration: assessmentData.duration, extraMinutes: 0,
           scheduledAt, linkValidityHours, linkValidFrom, expiresAt,
           totalMarks: 100, status: 'pending',
@@ -2239,20 +2246,57 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       if (typeof markBackupDone === "function") markBackupDone();
     }
 
-    function restoreBackup(input) {
+    async function restoreBackup(input) {
       const file = input.files[0];
       if (!file) return;
       const reader = new FileReader();
-      reader.onload = e => {
+      reader.onload = async e => {
         try {
-          const data = JSON.parse(e.target.result);
+          let text = e.target.result;
+          let data;
+          // Accept JSON array (preferred). CSV is not a full restore format.
+          if (file.name && file.name.toLowerCase().endsWith('.csv')) {
+            alert('CSV export is for Excel only. For restore, use a Backup JSON file (.json).');
+            return;
+          }
+          data = JSON.parse(text);
           if (!Array.isArray(data)) throw new Error('File is not a valid assessments backup (expected a JSON array).');
-          if (!confirm('This will REPLACE all current data with this backup (' + data.length + ' records). Continue?')) return;
-          saveAssessments(data);
+          // Strip huge photos/videos so restore stays fast and free-tier friendly
+          data = data.map(function(rec) {
+            const r = Object.assign({}, rec);
+            if (r.photoHistory) r.photoHistory = [];
+            if (r.videoHistory) r.videoHistory = [];
+            r.lastPhoto = null;
+            r.lastPhotoAt = r.lastPhotoAt || null;
+            return r;
+          });
+          if (!confirm('Restore ' + data.length + ' candidate(s) from this backup into the server?\n\nPhotos/videos in the file are skipped (scores & answers are kept).')) return;
+          lsSet('assessments', JSON.stringify(data));
+          // Push to backend restore API (full list merge)
+          try {
+            const res = await fetch(BACKEND_BASE + '/api/admin/restore', {
+              method: 'POST',
+              headers: authHeaders({ 'Content-Type': 'application/json' }),
+              body: JSON.stringify(data)
+            });
+            if (res.status === 401) { forceReLogin(); return; }
+            if (!res.ok) {
+              // Fallback: per-record PUT
+              await saveAssessments(data);
+            } else {
+              const j = await res.json().catch(function(){ return {}; });
+              await pullFromBackend();
+              alert('Backup restored to server: ' + (j.count != null ? j.count : data.length) + ' record(s).');
+              refreshAll();
+              return;
+            }
+          } catch (err) {
+            await saveAssessments(data);
+          }
           alert('Backup restored: ' + data.length + ' records loaded.');
           refreshAll();
         } catch (err) {
-          alert('Could not read backup file: ' + err.message);
+          alert('Could not read backup file: ' + err.message + '\n\nUse the .json backup file, not CSV.');
         }
       };
       reader.readAsText(file);
@@ -2549,7 +2593,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         (isAdmin() ? '<td><input type="checkbox" class="result-select" value="' + a.id + '"></td>' : '<td></td>') +
         '<td><strong>' + a.name + '</strong><br><small style="color:#64748b">' + a.email + '</small></td>' +
         '<td>' + a.role + '</td><td><span class="badge badge-' + a.level + '">' + a.level + '</span></td>' +
-        '<td>' + statusBadge(a.status, a) + (a.status === 'in-progress' ? ' <span class="badge" style="background:#d1fae5;color:#065f46;">● attending</span>' : '') + (a.status === 'completed' ? ' <span class="badge" style="background:#e0e7ff;color:#3730a3;">finished</span>' : '') + (a.statusNote ? '<br><small style="color:#9a3412;">' + a.statusNote + '</small>' : '') + (a.status === 'expired' && a.expiresAt ? '<br><small style="color:#9d174d;">Exp: ' + new Date(a.expiresAt).toLocaleString() + '</small>' : '') + (a.status === 'missed' ? '<br><small style="color:#c2410c;">Did not attend</small>' : '') + '</td><td>' + formatScoreCell(a) + '</td>' +
+        '<td>' + statusBadge(a.status, a) + (a.status === 'in-progress' ? ' <span class="badge" style="background:#d1fae5;color:#065f46;">● attending</span>' : '') + (a.lastActivityAt ? '<br><small style="color:#059669;">Last active: ' + new Date(a.lastActivityAt).toLocaleString() + '</small>' : (a.startedAt && a.status === 'in-progress' ? '<br><small style="color:#94a3b8;">Started: ' + new Date(a.startedAt).toLocaleString() + '</small>' : '')) + (a.status === 'completed' ? ' <span class="badge" style="background:#e0e7ff;color:#3730a3;">finished</span>' : '') + (a.statusNote ? '<br><small style="color:#9a3412;">' + a.statusNote + '</small>' : '') + (a.status === 'expired' && a.expiresAt ? '<br><small style="color:#9d174d;">Exp: ' + new Date(a.expiresAt).toLocaleString() + '</small>' : '') + (a.status === 'missed' ? '<br><small style="color:#c2410c;">Did not attend</small>' : '') + '</td><td>' + formatScoreCell(a) + '</td>' +
         '<td>' + resultBadge(a) + '</td>' +
         '<td>' + (a.flags && a.flags.length ? '<span class="flag-count">' + a.flags.length + ' 🚩</span>' : '0') + '</td>' +
         '<td><select style="font-size:0.75rem;padding:0.2rem;max-width:100px;" onchange="setCandidateTag(\'' + a.id + '\', this.value)">' +
@@ -3591,17 +3635,11 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
         if (!a || a.status === 'completed' || a.status === 'in-progress' || a.status === 'flagged' || a.status === 'missed') return;
         const exp = a.expiresAt ? new Date(a.expiresAt).getTime() : null;
         if (!exp || exp >= now) return;
-        if (a.status === 'pending') {
-          const scheduled = a.scheduledAt ? new Date(a.scheduledAt).getTime() : null;
-          if (scheduled && scheduled < now) {
-            a.status = 'missed';
-            a.statusNote = (a.statusNote ? a.statusNote + ' · ' : '') + 'Auto: did not attend (schedule passed)';
-            changed++;
-          } else {
-            a.status = 'expired';
-            a.statusNote = (a.statusNote ? a.statusNote + ' · ' : '') + 'Auto: link expired';
-            changed++;
-          }
+        if (a.status === 'pending' && !a.startedAt) {
+          a.status = 'missed';
+          a.statusNote = (a.statusNote ? a.statusNote + ' · ' : '') + 'Auto: missed (link expired, never started)';
+          a.statusUpdatedAt = new Date().toISOString();
+          changed++;
         }
       });
       if (changed) {
@@ -3707,6 +3745,7 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
     }
 
 function refreshAll() {
+      try { if (typeof autoMarkMissed === "function") autoMarkMissed(); } catch (e) {}
       try { renderDashboard(); } catch (e) { console.warn(e); }
       try { renderResults(); } catch (e) { console.warn(e); }
       try { renderFlagged(); } catch (e) { console.warn(e); }
