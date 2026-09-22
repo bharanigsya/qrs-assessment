@@ -297,6 +297,7 @@
         <button class="tab-btn" data-tab="shortlist" data-roles="admin,coordinator" onclick="switchTab('shortlist',this)">Shortlist</button>
         <button class="tab-btn" data-tab="similarity" data-roles="admin" onclick="switchTab('similarity',this)">Similarity Check</button>
         <button class="tab-btn" data-tab="flags" data-roles="admin,coordinator" onclick="switchTab('flags',this)">Flagged</button>
+        <button class="tab-btn" data-tab="support" data-roles="admin,coordinator" onclick="switchTab('support',this)">💬 Support</button>
         <button class="tab-btn" data-tab="ranking" data-roles="admin,coordinator" onclick="switchTab('ranking',this)">Ranking</button>
         <button class="tab-btn" data-tab="qbank" data-roles="admin" onclick="switchTab('qbank',this)">Question Bank</button>
         <button class="tab-btn" data-tab="activity" data-roles="admin" onclick="switchTab('activity',this)">Activity Log</button>
@@ -350,7 +351,7 @@
           <button class="btn btn-outline" style="margin-top:0.6rem;" onclick="switchTab('live', document.querySelector('[data-tab=live]'))">Open full Live Monitoring →</button>
         </div>
         <div class="card" style="border:1px solid #f59e0b;background:#fffbeb;">
-          <h2 class="card-title">💬 Support requests</h2>
+          <h2 class="card-title">💬 Support requests <button type="button" class="btn btn-outline" style="padding:0.15rem 0.5rem;font-size:0.75rem;margin-left:0.5rem;" onclick="switchTab('support', document.querySelector('[data-tab=support]'))">Open Support tab</button></h2>
           <div id="helpSupportList"><p style="color:#64748b;font-size:0.9rem;">No help messages.</p></div>
         </div>
 
@@ -378,6 +379,23 @@
         </div>
         <div id="liveMonitorGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1rem;margin-top:1rem;">
           <p style="color:#64748b;font-size:0.9rem;">No candidates currently in progress.</p>
+        </div>
+      </div>
+
+
+      <!-- SUPPORT CHAT -->
+      <div id="tab-support" class="tab-content">
+        <div class="card" style="border:1px solid #f59e0b;background:#fffbeb;">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.6rem;">
+            <div>
+              <h2 class="card-title" style="margin-bottom:0.2rem;">💬 Candidate Support Chat</h2>
+              <p style="font-size:0.85rem;color:var(--muted);margin:0;">Messages candidates send via <strong>Chat support</strong> on the test page. Refreshes with the live panel every few seconds.</p>
+            </div>
+            <button class="btn btn-outline" style="padding:0.35rem 0.75rem;font-size:0.85rem;" onclick="renderHelpSupport();updateHelpBadge();">Refresh</button>
+          </div>
+        </div>
+        <div class="card" style="margin-top:1rem;">
+          <div id="helpSupportListTab"><p style="color:#64748b;font-size:0.9rem;">No help messages yet. When a candidate writes in Chat support, it appears here.</p></div>
         </div>
       </div>
 
@@ -1228,6 +1246,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       if (name === 'dashboard') renderDashboard();
       if (name === 'live') renderLiveMonitor();
       if (name === 'results') renderResults();
+      if (name === 'support') { renderHelpSupport(); updateHelpBadge(); }
       if (name === 'analytics') { renderAnalyticsCharts(); renderFlagTypeChart(); }
       if (name === 'shortlist') renderShortlist();
       if (name === 'flags') renderFlagged();
@@ -1415,6 +1434,20 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       const remoteAct = remote.lastActivityAt ? new Date(remote.lastActivityAt).getTime() : 0;
       const chosenAct = chosen.lastActivityAt ? new Date(chosen.lastActivityAt).getTime() : 0;
       if (remoteAct > chosenAct) chosen.lastActivityAt = remote.lastActivityAt;
+      // Support chat: keep the longer / newer message thread from server or local
+      const rHelp = remote.helpMessages || [];
+      const cHelp = chosen.helpMessages || [];
+      if (rHelp.length > cHelp.length) {
+        chosen.helpMessages = rHelp;
+      } else if (rHelp.length && cHelp.length && rHelp.length === cHelp.length) {
+        const rLast = rHelp[rHelp.length - 1].at || '';
+        const cLast = cHelp[cHelp.length - 1].at || '';
+        if (rLast > cLast) chosen.helpMessages = rHelp;
+      } else if (!cHelp.length && rHelp.length) {
+        chosen.helpMessages = rHelp;
+      }
+      if (remote.helpUnreadAdmin) chosen.helpUnreadAdmin = true;
+      if (remote.helpUnreadCandidate) chosen.helpUnreadCandidate = true;
       return chosen;
     }
 
@@ -3597,26 +3630,36 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
     }
 
     
-    function renderHelpSupport() {
-      const el = document.getElementById('helpSupportList');
-      if (!el) return;
+        function renderHelpSupport() {
       const list = getAssessments().filter(a => (a.helpMessages && a.helpMessages.length) || a.helpUnreadAdmin);
+      const emptyHtml = '<p style="color:#64748b;font-size:0.9rem;">No help messages yet. Candidates use the <strong>💬 Chat support</strong> button on their test page.</p>';
+      let bodyHtml;
       if (!list.length) {
-        el.innerHTML = '<p style="color:#64748b;font-size:0.9rem;">No help messages.</p>';
-        return;
+        bodyHtml = emptyHtml;
+      } else {
+        bodyHtml = list.slice().sort(function(x, y) {
+          const tx = (x.helpMessages && x.helpMessages.length) ? new Date(x.helpMessages[x.helpMessages.length - 1].at).getTime() : 0;
+          const ty = (y.helpMessages && y.helpMessages.length) ? new Date(y.helpMessages[y.helpMessages.length - 1].at).getTime() : 0;
+          return ty - tx;
+        }).map(function(a) {
+          const last = (a.helpMessages && a.helpMessages.length) ? a.helpMessages[a.helpMessages.length - 1] : null;
+          const unread = a.helpUnreadAdmin ? ' <span class="badge" style="background:#fef3c7;color:#b45309;">Unread</span>' : '';
+          const preview = last ? ((last.from === 'admin' ? 'Admin' : 'Candidate') + ': ' + String(last.text || '').slice(0, 100)) : 'New support request';
+          const when = last && last.at ? new Date(last.at).toLocaleString() : '';
+          return '<div style="padding:0.75rem 0;border-bottom:1px solid #fde68a;font-size:0.9rem;">' +
+            '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.6rem;flex-wrap:wrap;">' +
+            '<div><strong>' + a.name + '</strong>' + unread +
+            '<br><small style="color:#64748b;">' + a.role + ' / ' + a.level + ' · ' + (a.status || '') + (when ? ' · ' + when : '') + '</small>' +
+            '<div style="margin-top:0.25rem;color:#334155;">' + preview.replace(/</g, '&lt;') + '</div></div>' +
+            '<button class="btn btn-primary" style="padding:0.3rem 0.7rem;font-size:0.82rem;" onclick="viewDetail(\'' + a.id + '\')">Open chat & reply</button>' +
+            '</div></div>';
+        }).join('');
       }
-      el.innerHTML = list.slice().sort((x,y) => {
-        const tx = (x.helpMessages && x.helpMessages.length) ? new Date(x.helpMessages[x.helpMessages.length-1].at).getTime() : 0;
-        const ty = (y.helpMessages && y.helpMessages.length) ? new Date(y.helpMessages[y.helpMessages.length-1].at).getTime() : 0;
-        return ty - tx;
-      }).map(a => {
-        const last = (a.helpMessages && a.helpMessages.length) ? a.helpMessages[a.helpMessages.length-1] : null;
-        const unread = a.helpUnreadAdmin ? ' <span class="badge" style="background:#fef3c7;color:#b45309;">Unread</span>' : '';
-        return '<div style="padding:0.55rem 0;border-bottom:1px solid #fde68a;font-size:0.88rem;">' +
-          '<strong>' + a.name + '</strong>' + unread +
-          '<br><small style="color:#64748b;">' + (last ? (last.from + ': ' + String(last.text||'').slice(0,80)) : '') + '</small> ' +
-          '<button class="btn btn-outline" style="padding:0.2rem 0.45rem;font-size:0.75rem;" onclick="viewDetail(\'' + a.id + '\')">Open chat</button></div>';
-      }).join('');
+      const el = document.getElementById('helpSupportList');
+      if (el) el.innerHTML = bodyHtml;
+      const elTab = document.getElementById('helpSupportListTab');
+      if (elTab) elTab.innerHTML = bodyHtml;
+      if (typeof updateHelpBadge === 'function') updateHelpBadge();
     }
 
     function renderLiveCandidates() {
