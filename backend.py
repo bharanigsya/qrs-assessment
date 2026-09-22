@@ -36,6 +36,20 @@ def _clean_database_url(raw):
     # Common paste error: double @@ before host
     if "@@" in url:
         url = url.replace("@@", "@", 1)
+    # psycopg2 does not accept Supabase pooler flags like ?pgbouncer=true
+    if "?" in url:
+        base, query = url.split("?", 1)
+        # Drop known-invalid / unnecessary query params for libpq/psycopg2
+        drop = {"pgbouncer", "pgbouncer=true", "pgbouncer=1"}
+        kept = []
+        for part in query.split("&"):
+            if not part:
+                continue
+            key = part.split("=", 1)[0].lower()
+            if key == "pgbouncer":
+                continue
+            kept.append(part)
+        url = base + ("?" + "&".join(kept) if kept else "")
     return url
 
 DATABASE_URL = _clean_database_url(os.environ.get("DATABASE_URL", ""))
@@ -946,6 +960,11 @@ def create_assessment():
         "lastVideoAt": body.get("lastVideoAt"),
         "videoHistory": body.get("videoHistory") or [],
         "allowMobile": bool(body.get("allowMobile")),
+        # Was previously missing here entirely, which meant unchecking "Store proctor
+        # photos" in admin only worked if the candidate happened to share the admin's
+        # own browser (localStorage). Any real candidate opening the link fresh on
+        # their own device got the default (True) regardless of what was chosen.
+        "storePhotos": True if body.get("storePhotos") is None else bool(body.get("storePhotos")),
     }
     data.append(item)
     save_assessments(data)
@@ -997,6 +1016,10 @@ def add_photo(aid):
     admin_rec = current_admin()
     if not admin_rec and not candidate_token_ok(existing, body.get("token")):
         return jsonify({"error": "Unauthorized"}), 401
+    # Respect the admin's "Store proctor photos" toggle server-side too — the client
+    # already skips capturing when this is off, but don't rely on that alone.
+    if existing.get("storePhotos") is False and not admin_rec:
+        return jsonify({"ok": True, "skipped": "storePhotos is off for this candidate"}), 200
     payload, err = append_media(aid, "photo", img, {"at": at})
     if err:
         return jsonify({"error": err}), 404
