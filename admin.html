@@ -227,9 +227,104 @@
     body.theme-dark .action-menu button { color: #e5e7eb; }
     body.theme-dark .action-menu button:hover { background: #1f2937; }
 
+    /* Accent themes (Settings → Accent color) */
+    body.accent-indigo { --primary: #4f46e5; --primary-dark: #3730a3; --primary-soft: #eef2ff; }
+    body.accent-teal { --primary: #0d9488; --primary-dark: #0f766e; --primary-soft: #ccfbf1; }
+    body.accent-green { --primary: #059669; --primary-dark: #047857; --primary-soft: #d1fae5; }
+    body.accent-indigo .tab-btn.active,
+    body.accent-teal .tab-btn.active,
+    body.accent-green .tab-btn.active {
+      background: var(--primary-soft);
+      color: var(--primary);
+    }
+    body.accent-indigo .btn-primary,
+    body.accent-teal .btn-primary,
+    body.accent-green .btn-primary {
+      background: var(--primary);
+    }
+    body.accent-indigo .btn-primary:hover,
+    body.accent-teal .btn-primary:hover,
+    body.accent-green .btn-primary:hover {
+      background: var(--primary-dark);
+    }
+    .quick-actions-bar {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      align-items: center;
+      padding: 0.55rem 0 0.75rem;
+      margin-bottom: 0.35rem;
+      border-bottom: 1px solid var(--border, #e2e8f0);
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: #f8fafc;
+    }
+    body.theme-dark .quick-actions-bar { background: #0b1220; border-color: #1f2937; }
+    .quick-actions-bar .qa-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #94a3b8;
+      margin-right: 0.25rem;
+    }
+    .kpi-strip {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 0.75rem;
+      margin-bottom: 1.15rem;
+    }
+    .kpi-card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 14px;
+      padding: 1rem 1.05rem;
+      box-shadow: 0 1px 3px rgba(15,23,42,0.06);
+    }
+    body.theme-dark .kpi-card { background: #111827; border-color: #1f2937; }
+    .kpi-card .kpi-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #64748b;
+    }
+    .kpi-card .kpi-value {
+      font-size: 1.75rem;
+      font-weight: 800;
+      margin-top: 0.2rem;
+      color: #0f172a;
+      line-height: 1.15;
+    }
+    body.theme-dark .kpi-card .kpi-value { color: #f1f5f9; }
+    .kpi-card.kpi-live .kpi-value { color: #059669; }
+    .kpi-card.kpi-flag .kpi-value { color: #dc2626; }
+    .kpi-card.kpi-chat .kpi-value { color: #d97706; }
+    .kpi-card.kpi-today .kpi-value { color: var(--primary, #4f46e5); }
+
+
+    .offline-banner {
+      display: none; position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+      background: #b45309; color: #fff; text-align: center; padding: 0.55rem 1rem;
+      font-size: 0.88rem; font-weight: 600;
+    }
+    .offline-banner.show { display: block; }
+    body.has-offline-banner { padding-top: 2.4rem; }
+    .badge-mobile-ok {
+      display: inline-block; padding: 0.2rem 0.55rem; border-radius: 999px;
+      font-size: 0.72rem; font-weight: 700; background: #d1fae5; color: #065f46;
+      border: 1px solid #6ee7b7;
+    }
+    .badge-mobile-no {
+      display: inline-block; padding: 0.2rem 0.55rem; border-radius: 999px;
+      font-size: 0.72rem; font-weight: 700; background: #f1f5f9; color: #475569;
+      border: 1px solid #e2e8f0;
+    }
   </style>
 </head>
 <body>
+  <div id="adminOfflineBanner" class="offline-banner" role="status">You&apos;re offline — scores and updates may not sync until connection returns.</div>
 
   <!-- LOGIN -->
   <div id="loginScreen" class="login-screen">
@@ -304,6 +399,16 @@
         <button class="tab-btn" data-tab="settings" data-roles="admin" onclick="switchTab('settings',this)">Settings</button>
       </div>
 
+      <div class="quick-actions-bar" id="quickActionsBar">
+        <span class="qa-label">Quick</span>
+        <button type="button" class="btn btn-primary" style="padding:0.4rem 0.85rem;font-size:0.84rem;" onclick="switchTab('create', document.querySelector('[data-tab=create]'))">➕ Create</button>
+        <button type="button" class="btn btn-outline" style="padding:0.4rem 0.85rem;font-size:0.84rem;" onclick="switchTab('bulk', document.querySelector('[data-tab=bulk]'))">📋 Bulk invite</button>
+        <button type="button" class="btn btn-outline" style="padding:0.4rem 0.85rem;font-size:0.84rem;" onclick="downloadBackup()">⬇ Backup</button>
+        <button type="button" class="btn btn-outline" style="padding:0.4rem 0.85rem;font-size:0.84rem;" onclick="switchTab('support', document.querySelector('[data-tab=support]'))">💬 Support</button>
+        <button type="button" class="btn btn-outline" style="padding:0.4rem 0.85rem;font-size:0.84rem;" onclick="switchTab('live', document.querySelector('[data-tab=live]'))">🟢 Live</button>
+        <button type="button" class="btn btn-outline" style="padding:0.4rem 0.85rem;font-size:0.84rem;" onclick="switchTab('results', document.querySelector('[data-tab=results]'))">📊 Results</button>
+      </div>
+
       <!-- DASHBOARD -->
       <div id="tab-dashboard" class="tab-content active">
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.9rem;margin-bottom:1.25rem;">
@@ -335,6 +440,7 @@
           <h2 class="card-title" style="color:#991b1b;">⚡ Needs action</h2>
           <div id="needsActionList"><p style="color:#64748b;font-size:0.9rem;">All clear.</p></div>
         </div>
+        <div class="kpi-strip" id="kpiStrip"></div>
         <div class="stat-grid" id="statGrid"></div>
         <div class="card" style="border:1px solid #c7d2fe;background:#eef2ff;margin-bottom:1rem;">
           <h2 class="card-title">📅 Today&apos;s schedule</h2>
@@ -774,6 +880,32 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
             <input type="password" id="newPass" placeholder="New password (min 6 characters)">
           </div>
           <button class="btn btn-primary" onclick="changePassword()">Update Password</button>
+
+          <hr style="margin:1.2rem 0;border:none;border-top:1px solid var(--border);">
+          <h3 style="font-size:0.95rem;margin-bottom:0.55rem;">Dashboard preferences</h3>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Default tab after login</label>
+              <select id="prefDefaultTab" style="max-width:220px;">
+                <option value="dashboard">Dashboard</option>
+                <option value="results">Results</option>
+                <option value="live">Live Monitoring</option>
+                <option value="create">Create Assessment</option>
+                <option value="support">Support</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Accent color</label>
+              <select id="prefAccent" style="max-width:220px;">
+                <option value="indigo">Indigo (default)</option>
+                <option value="teal">Teal</option>
+                <option value="green">Green</option>
+              </select>
+            </div>
+          </div>
+          <button class="btn btn-primary" style="margin-top:0.35rem;" onclick="saveDashboardPrefs()">Save dashboard preferences</button>
+          <p id="dashPrefsHint" style="font-size:0.8rem;color:#64748b;margin-top:0.45rem;"></p>
+
           <hr style="margin:1.4rem 0;border:none;border-top:1px solid var(--border);">
 
           <h3 style="font-size:0.95rem;margin-bottom:0.6rem;">Data Backup</h3>
@@ -1089,8 +1221,16 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
             const badge = document.getElementById('headerRoleBadge');
             if (badge) badge.textContent = (data.role === 'admin' ? 'Admin' : 'Coordinator');
             if (typeof applyRoleVisibility === 'function') applyRoleVisibility();
+            if (typeof applyAccentColor === 'function') applyAccentColor();
             if (typeof refreshAll === 'function') refreshAll();
-            if (typeof pullFromBackend === 'function') pullFromBackend().then(function(){ if (typeof refreshAll === 'function') refreshAll(); });
+            if (typeof pullFromBackend === 'function') {
+              pullFromBackend().then(function(){
+                if (typeof refreshAll === 'function') refreshAll();
+                if (typeof openDefaultTab === 'function') openDefaultTab();
+              });
+            } else if (typeof openDefaultTab === 'function') {
+              openDefaultTab();
+            }
             return;
           }
           if (res.status === 401) {
@@ -1229,6 +1369,100 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       if (e.key === 'Enter') doLogin();
     });
 
+
+    function applyAccentColor(name) {
+      const n = name || lsGet('qrs_accent') || 'indigo';
+      document.body.classList.remove('accent-indigo', 'accent-teal', 'accent-green');
+      document.body.classList.add('accent-' + (['indigo','teal','green'].includes(n) ? n : 'indigo'));
+      try {
+        document.documentElement.style.setProperty('--primary', n === 'teal' ? '#0d9488' : (n === 'green' ? '#059669' : '#4f46e5'));
+        document.documentElement.style.setProperty('--primary-dark', n === 'teal' ? '#0f766e' : (n === 'green' ? '#047857' : '#3730a3'));
+        document.documentElement.style.setProperty('--primary-soft', n === 'teal' ? '#ccfbf1' : (n === 'green' ? '#d1fae5' : '#eef2ff'));
+      } catch (e) {}
+    }
+    function saveDashboardPrefs() {
+      const tab = (document.getElementById('prefDefaultTab') || {}).value || 'dashboard';
+      const accent = (document.getElementById('prefAccent') || {}).value || 'indigo';
+      lsSet('qrs_default_tab', tab);
+      lsSet('qrs_accent', accent);
+      applyAccentColor(accent);
+      const hint = document.getElementById('dashPrefsHint');
+      if (hint) hint.textContent = 'Saved. Default tab: ' + tab + ' · Accent: ' + accent + '. Applies on next login (accent applied now).';
+      if (typeof showToast === 'function') showToast('Dashboard preferences saved');
+    }
+    function loadDashboardPrefsIntoForm() {
+      const tab = lsGet('qrs_default_tab') || 'dashboard';
+      const accent = lsGet('qrs_accent') || 'indigo';
+      const tEl = document.getElementById('prefDefaultTab');
+      const aEl = document.getElementById('prefAccent');
+      if (tEl) tEl.value = tab;
+      if (aEl) aEl.value = accent;
+    }
+    function openDefaultTab() {
+      const tab = lsGet('qrs_default_tab') || 'dashboard';
+      const btn = document.querySelector('.tab-btn[data-tab="' + tab + '"]');
+      if (btn) {
+        try {
+          if (btn.getAttribute('data-roles')) {
+            const allowed = btn.getAttribute('data-roles').split(',').map(function(s){ return s.trim(); });
+            if (allowed.indexOf(currentRole()) === -1) {
+              switchTab('dashboard', document.querySelector('[data-tab=dashboard]'));
+              return;
+            }
+          }
+          switchTab(tab, btn);
+          return;
+        } catch (e) {}
+      }
+      switchTab('dashboard', document.querySelector('[data-tab=dashboard]'));
+    }
+    function renderKpiStrip(list) {
+      const el = document.getElementById('kpiStrip');
+      if (!el) return;
+      list = list || getAssessments();
+      const start = new Date(); start.setHours(0,0,0,0);
+      const end = new Date(); end.setHours(23,59,59,999);
+      const isToday = function(iso) {
+        if (!iso) return false;
+        const t = new Date(iso).getTime();
+        return t >= start.getTime() && t <= end.getTime();
+      };
+      const todayTests = list.filter(function(a) {
+        return isToday(a.createdAt) || isToday(a.scheduledAt) || isToday(a.startedAt) || isToday(a.completedAt);
+      }).length;
+      const inProg = list.filter(function(a) { return a.status === 'in-progress' || a.status === 'flagged'; }).length;
+      const completedToday = list.filter(function(a) { return a.status === 'completed' && isToday(a.completedAt); }).length;
+      const flagged = list.filter(function(a) { return (a.flags && a.flags.length) || a.status === 'flagged'; }).length;
+      const unread = list.filter(function(a) { return a.helpUnreadAdmin; }).length;
+      el.innerHTML =
+        '<div class="kpi-card kpi-today"><div class="kpi-label">Today&apos;s tests</div><div class="kpi-value">' + todayTests + '</div></div>' +
+        '<div class="kpi-card kpi-live"><div class="kpi-label">In progress</div><div class="kpi-value">' + inProg + '</div></div>' +
+        '<div class="kpi-card"><div class="kpi-label">Completed today</div><div class="kpi-value">' + completedToday + '</div></div>' +
+        '<div class="kpi-card kpi-flag"><div class="kpi-label">Flagged</div><div class="kpi-value">' + flagged + '</div></div>' +
+        '<div class="kpi-card kpi-chat"><div class="kpi-label">Unread chat</div><div class="kpi-value">' + unread + '</div></div>';
+    }
+
+
+    function updateAdminOfflineBanner() {
+      const el = document.getElementById('adminOfflineBanner');
+      if (!el) return;
+      const offline = (typeof navigator !== 'undefined' && navigator.onLine === false);
+      if (offline) {
+        el.classList.add('show');
+        document.body.classList.add('has-offline-banner');
+      } else {
+        el.classList.remove('show');
+        document.body.classList.remove('has-offline-banner');
+      }
+    }
+    window.addEventListener('online', function() {
+      updateAdminOfflineBanner();
+      try { if (typeof pullFromBackend === 'function') pullFromBackend().then(function(){ if (typeof refreshAll === 'function') refreshAll(); }); } catch (e) {}
+    });
+    window.addEventListener('offline', updateAdminOfflineBanner);
+    document.addEventListener('DOMContentLoaded', updateAdminOfflineBanner);
+    setTimeout(updateAdminOfflineBanner, 400);
+
     function switchTab(name, btn) {
       // data-roles check
       const tabBtn = btn || document.querySelector('.tab-btn[data-tab="' + name + '"]');
@@ -1258,6 +1492,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         const pm = lsGet('qrs_pass_mark') || '60';
         const el = document.getElementById('passMark');
         if (el) el.value = pm;
+        if (typeof loadDashboardPrefsIntoForm === 'function') loadDashboardPrefsIntoForm();
       }
     }
 
@@ -1881,11 +2116,15 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         document.getElementById('testLink').href = fullUrl;
         document.getElementById('testLink').textContent = fullUrl;
         const unlockText = scheduledAt ? new Date(scheduledAt).toLocaleString() : 'Available immediately (no schedule lock)';
+        const mobileBadge = (document.getElementById('allowMobile') && document.getElementById('allowMobile').checked)
+          ? '<span class="badge-mobile-ok">📱 Mobile allowed</span>'
+          : '<span class="badge-mobile-no">💻 Desktop only</span>';
         document.getElementById('linkDetails').innerHTML =
           '<div style="margin-top:0.65rem;padding:0.85rem 1rem;background:#eef2ff;border:1px solid #c7d2fe;border-radius:12px;font-size:0.9rem;line-height:1.55;">' +
           '<div style="font-weight:700;margin-bottom:0.4rem;color:#3730a3;">Link timing</div>' +
           '<div><strong>Unlocks (candidate can start):</strong> ' + unlockText + '</div>' +
           '<div><strong>Expires (link stops working):</strong> ' + new Date(expiresAt).toLocaleString() + '</div>' +
+          '<div style="margin-top:0.35rem;">' + mobileBadge + '</div>' +
           '<div><strong>Valid for:</strong> ' + linkValidityHours + ' hour(s) from ' + (scheduledAt ? 'scheduled start' : 'now') + '</div>' +
           '<div><strong>Test duration:</strong> ' + duration + ' minutes (timer inside exam)</div>' +
           '</div>' +
@@ -1989,6 +2228,8 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       const pending = list.filter(a => a.status === 'pending');
       const scores = completed.filter(a => a.score !== null).map(a => a.score);
       const avgScore = scores.length ? Math.round(scores.reduce((s,v) => s+v, 0) / scores.length) : 0;
+
+      if (typeof renderKpiStrip === 'function') renderKpiStrip(list);
 
       document.getElementById('statGrid').innerHTML =
         '<div class="stat-card teal"><div class="label">Total</div><div class="value">' + list.length + '</div></div>' +
@@ -3175,6 +3416,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         '<div class="detail-row"><span>Email</span><span>' + a.email + '</span></div>' +
         '<div class="detail-row"><span>Mobile</span><span>' + (a.mobile || '—') + '</span></div>' +
         '<div class="detail-row"><span>Role / Level</span><span>' + a.role + ' / ' + a.level + '</span></div>' +
+        '<div class="detail-row"><span>Mobile support</span><span>' + (a.allowMobile ? '<span class="badge-mobile-ok">📱 Mobile allowed</span>' : '<span class="badge-mobile-no">💻 Desktop only</span>') + '</span></div>' +
         '<div class="detail-row"><span>Status</span><span>' + statusBadge(a.status, a) + (a.statusNote ? ' — ' + a.statusNote : '') + '</span></div>' +
         '<div class="detail-row"><span>MCQ (auto)</span><strong>' + (a.score != null ? a.score + ' / 100' : 'Not submitted') + (a.mcqCount != null ? ' <small style="color:#64748b;">(' + (a.mcqCorrect||0) + '/' + a.mcqCount + ' correct)</small>' : '') + '</strong></div>' +
         '<div class="detail-row"><span>Voice score</span><strong>' + (a.voiceScore !== undefined && a.voiceScore !== null ? a.voiceScore : 'Not scored') + '</strong></div>' +
@@ -3376,7 +3618,7 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
             '<div class="alert alert-success">' +
               '<strong>New link generated' + (synced ? '' : ' (saved locally — server sync failed)') + ' — link copied to clipboard.</strong>' +
               '<div style="margin:0.5rem 0;word-break:break-all;"><a href="' + fullUrl + '" target="_blank" style="color:#4f46e5;">' + fullUrl + '</a></div>' +
-              '<div style="font-size:0.82rem;color:#475569;">Unlocks: ' + unlockText + ' · Expires: ' + new Date(a.expiresAt).toLocaleString() + ' · Valid for ' + (a.linkValidityHours || 24) + ' hour(s)</div>' +
+              '<div style="font-size:0.82rem;color:#475569;">Unlocks: ' + unlockText + ' · Expires: ' + new Date(a.expiresAt).toLocaleString() + ' · Valid for ' + (a.linkValidityHours || 24) + ' hour(s) · ' + (a.allowMobile ? '📱 Mobile allowed' : '💻 Desktop only') + '</div>' +
               '<div style="margin-top:0.6rem;display:flex;gap:0.5rem;flex-wrap:wrap;">' +
                 '<button class="btn btn-success" style="padding:0.35rem 0.75rem;font-size:0.85rem;" onclick="navigator.clipboard.writeText(' + JSON.stringify(fullUrl) + ').then(()=>alert(\'Link copied!\'))">Copy Link</button>' +
               '</div>' +
@@ -3936,6 +4178,7 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
       if (lsGet('qrs_theme') === 'dark') {
         document.body.classList.add('theme-dark');
       }
+      if (typeof applyAccentColor === 'function') applyAccentColor();
     }
 
     function showToast(msg) {

@@ -552,3 +552,20 @@ body.theme-dark .toast { background: #e2e8f0; color: #0f172a; }
 }
 
 .admin-shell .tabs { background: var(--card); padding: 0.55rem; border-radius: 999px; border: 1px solid var(--border); box-shadow: var(--shadow); }
+
+.offline-banner {
+  display: none; position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+  background: #b45309; color: #fff; text-align: center; padding: 0.55rem 1rem;
+  font-size: 0.88rem; font-weight: 600;
+}
+.offline-banner.show { display: block; }
+body.has-offline-banner { padding-top: 2.4rem; }
+@media (max-width: 768px) {
+  .proctor-panel {
+    position: fixed; top: auto; bottom: 0; right: 0; left: 0; width: 100%;
+    max-height: 42vh; border-radius: 16px 16px 0 0;
+    transform: translateY(calc(100% - 48px));
+    transition: transform 0.25s ease;
+  }
+  .proctor-panel.expanded { transform: translateY(0); }
+}

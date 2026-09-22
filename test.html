@@ -16,6 +16,12 @@
   </style>
 </head>
 <body>
+  <div id="offlineBanner" class="offline-banner" role="status">You&apos;re offline — scores and photos may not sync until connection returns.</div>
+  <div id="portraitLock" class="portrait-lock" aria-live="polite">
+    <div style="font-size:2.5rem;">📱</div>
+    <div style="font-size:1.25rem;font-weight:700;">Please rotate to portrait</div>
+    <div style="font-size:0.95rem;color:#94a3b8;max-width:280px;margin:0 auto;">Hold your phone upright for stable face framing during the test.</div>
+  </div>
   <header class="header">
     <div class="container">
       <div class="logo">
@@ -97,7 +103,7 @@
 
     <div class="container" style="margin-top:1.5rem; max-width:800px;">
       <!-- Timer + Progress -->
-      <div class="card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
+      <div class="card sticky-timer-bar" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
         <div>
           <div style="font-size:0.85rem; color:var(--muted);">Time Remaining</div>
           <div class="timer" id="timer">00:00</div>
@@ -538,6 +544,60 @@
       }
     }
 
+
+    function updateOfflineBanner() {
+      const el = document.getElementById('offlineBanner');
+      if (!el) return;
+      const offline = (typeof navigator !== 'undefined' && navigator.onLine === false);
+      if (offline) {
+        el.classList.add('show');
+        document.body.classList.add('has-offline-banner');
+      } else {
+        el.classList.remove('show');
+        document.body.classList.remove('has-offline-banner');
+      }
+    }
+    window.addEventListener('online', function() {
+      updateOfflineBanner();
+      try {
+        if (assessment && (assessment.status === 'in-progress' || assessment.status === 'completed' || assessment.status === 'flagged')) {
+          if (typeof syncAssessmentToBackend === 'function') syncAssessmentToBackend(2);
+        }
+      } catch (e) {}
+    });
+    window.addEventListener('offline', updateOfflineBanner);
+    setTimeout(updateOfflineBanner, 300);
+
+    function updatePortraitLock() {
+      const lock = document.getElementById('portraitLock');
+      if (!lock) return;
+      const testEl = document.getElementById('testUI');
+      const testing = testEl && testEl.style.display !== 'none';
+      const mobile = typeof isMobileDevice === 'function' && isMobileDevice();
+      if (!testing || !mobile) {
+        lock.classList.remove('show');
+        return;
+      }
+      const landscape = window.matchMedia && window.matchMedia('(orientation: landscape)').matches;
+      const short = window.innerHeight < 500;
+      if (landscape && short) lock.classList.add('show');
+      else lock.classList.remove('show');
+    }
+    window.addEventListener('orientationchange', function() { setTimeout(updatePortraitLock, 200); });
+    window.addEventListener('resize', function() { setTimeout(updatePortraitLock, 150); });
+
+    function setupMobileProctorPanel() {
+      const panel = document.getElementById('proctorPanel');
+      if (!panel) return;
+      const header = panel.querySelector('.proctor-header');
+      if (!header || header.dataset.collapseBound) return;
+      header.dataset.collapseBound = '1';
+      header.addEventListener('click', function() {
+        if (window.innerWidth > 768) return;
+        panel.classList.toggle('expanded');
+      });
+    }
+
     function isMobileDevice() {
       const uaMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(navigator.userAgent);
       const touchSmallScreen = ('ontouchstart' in window) && Math.min(window.innerWidth, window.innerHeight) < 820;
@@ -556,8 +616,8 @@
         const videoConstraints = onMobile
           ? {
               facingMode: { ideal: 'user' },
-              width: { ideal: 1280, min: 640 },
-              height: { ideal: 720, min: 480 },
+              width: { ideal: 1920, min: 720 },
+              height: { ideal: 1080, min: 540 },
               frameRate: { ideal: 24, max: 30 }
             }
           : { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } };
@@ -567,7 +627,40 @@
         });
         const video = document.getElementById('cameraFeed');
         video.srcObject = stream;
+        video.setAttribute('playsinline', 'true');
+        video.setAttribute('webkit-playsinline', 'true');
         await video.play();
+        // Try mild advanced constraints when supported (focus / exposure)
+        try {
+          const track = stream.getVideoTracks()[0];
+          if (track && onMobile) {
+            const caps = track.getCapabilities ? track.getCapabilities() : {};
+            const adv = {};
+            if (caps.focusMode && caps.focusMode.includes('continuous')) adv.focusMode = 'continuous';
+            if (caps.exposureMode && caps.exposureMode.includes('continuous')) adv.exposureMode = 'continuous';
+            if (Object.keys(adv).length) await track.applyConstraints({ advanced: [adv] });
+          }
+        } catch (e) {}
+        // Low-light tip for mobile
+        if (onMobile) {
+          setTimeout(function() {
+            try {
+              const c = document.createElement('canvas');
+              c.width = 80; c.height = 60;
+              const ctx = c.getContext('2d');
+              ctx.drawImage(video, 0, 0, 80, 60);
+              const d = ctx.getImageData(0, 0, 80, 60).data;
+              let sum = 0;
+              for (let i = 0; i < d.length; i += 4) sum += (d[i] + d[i+1] + d[i+2]) / 3;
+              const avg = sum / (d.length / 4);
+              if (avg < 45) {
+                const hint = document.getElementById('photoCountHint');
+                if (hint) hint.textContent = 'Low light — turn on room lights or flashlight for clearer photos';
+                else alert('Room looks dark. Turn on lights or use your phone flashlight for clearer proctor photos.');
+              }
+            } catch (e) {}
+          }, 2000);
+        }
         // Load face detection models in the background (non-blocking for start)
         loadFaceModels();
       } catch (err) {
@@ -609,6 +702,9 @@
         const cnt = document.getElementById('photoCountHint');
         if (cnt) cnt.textContent = 'Proctor photos disabled for this link';
       }
+      try { setupMobileProctorPanel(); } catch (e) {}
+      try { updatePortraitLock(); } catch (e) {}
+      try { updateOfflineBanner(); } catch (e) {}
       /* startVideoClips disabled */
       startTimer();
       renderQuestion();
@@ -1012,8 +1108,8 @@
       const canvas = document.createElement('canvas');
       // 1 photo every 1 minute after a reliable first capture
       const onMobile = !!(assessment && assessment.allowMobile && isMobileDevice());
-      const MAX_CAPTURE_WIDTH = onMobile ? 1280 : 640;
-      const JPEG_QUALITY = onMobile ? 0.92 : 0.78;
+      const MAX_CAPTURE_WIDTH = onMobile ? 1600 : 640;
+      const JPEG_QUALITY = onMobile ? 0.94 : 0.78;
       const LOCAL_HISTORY_LIMIT = onMobile ? 4 : 6;
       let firstOk = false;
 
