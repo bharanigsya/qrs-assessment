@@ -65,31 +65,6 @@ CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 
 def get_pg():
-    """Connect using DATABASE_URL. Returns connection (caller should close)."""
-    import psycopg2
-    if not DATABASE_URL or "://" not in DATABASE_URL:
-        raise RuntimeError("DATABASE_URL missing or invalid")
-    # Redact password for logs on failure
-    try:
-        conn = psycopg2.connect(DATABASE_URL, connect_timeout=20)
-    except Exception as e:
-        safe = DATABASE_URL
-        if "@" in safe and "://" in safe:
-            # postgresql://user:pass@host → postgresql://user:***@host
-            try:
-                pre, post = safe.split("@", 1)
-                if ":" in pre.split("://", 1)[-1]:
-                    scheme_user, _pass = pre.rsplit(":", 1)
-                    safe = scheme_user + ":***@" + post
-            except Exception:
-                safe = "postgresql://***"
-        print("Postgres connect failed. Using URL like:", safe)
-        raise e
-    conn.autocommit = True
-    return conn
-
-
-def get_pg():
     """Get a pooled connection using DATABASE_URL. Caller MUST return it with put_pg(conn)."""
     import psycopg2
     if not DATABASE_URL or "://" not in DATABASE_URL:
@@ -423,10 +398,23 @@ def upsert_assessment(aid, body, merge_existing=True):
                         continue
                     if k == "videoHistory" and not v and existing.get("videoHistory"):
                         continue
+                    # Never wipe a saved numeric score with null/empty from a partial sync
+                    if k == "score" and (v is None or v == "") and existing.get("score") is not None:
+                        continue
+                    if k == "answers" and (not v) and existing.get("answers"):
+                        continue
+                    if k == "completedAt" and not v and existing.get("completedAt"):
+                        continue
                     merged[k] = v
                 # Never let a late/stale sync downgrade a finished test back to in-progress/pending
+                if body.get("status") == "completed":
+                    merged["status"] = "completed"
+                    if body.get("score") is not None:
+                        merged["score"] = body.get("score")
+                    if body.get("completedAt"):
+                        merged["completedAt"] = body.get("completedAt")
                 if existing.get("status") == "completed":
-                    if merged.get("status") in ("pending", "in-progress", "expired", "missed"):
+                    if merged.get("status") in ("pending", "in-progress", "expired", "missed", "flagged"):
                         merged["status"] = "completed"
                     if existing.get("score") is not None and merged.get("score") is None:
                         merged["score"] = existing.get("score")
@@ -468,7 +456,19 @@ def upsert_assessment(aid, body, merge_existing=True):
                         continue
                     if k == "videoHistory" and not v and a.get("videoHistory"):
                         continue
+                    if k == "score" and (v is None or v == "") and a.get("score") is not None:
+                        continue
+                    if k == "answers" and (not v) and a.get("answers"):
+                        continue
+                    if k == "completedAt" and not v and a.get("completedAt"):
+                        continue
                     merged[k] = v
+                if body.get("status") == "completed":
+                    merged["status"] = "completed"
+                    if body.get("score") is not None:
+                        merged["score"] = body.get("score")
+                    if body.get("completedAt"):
+                        merged["completedAt"] = body.get("completedAt")
                 if a.get("status") == "completed":
                     if merged.get("status") in ("pending", "in-progress", "expired", "missed"):
                         merged["status"] = "completed"
@@ -746,8 +746,22 @@ def parse_iso_utc_naive(ts):
 
 
 def is_link_expired(a):
+    """True only when past expiresAt (+ 10 min grace). Rebuild from linkValidFrom + hours if needed."""
+    from datetime import timedelta
     exp = parse_iso_utc_naive(a.get("expiresAt"))
-    return bool(exp) and datetime.utcnow() > exp
+    hours = a.get("linkValidityHours") or 24
+    try:
+        hours = int(hours)
+    except Exception:
+        hours = 24
+    start = parse_iso_utc_naive(a.get("linkValidFrom")) or parse_iso_utc_naive(a.get("scheduledAt")) or parse_iso_utc_naive(a.get("createdAt"))
+    if start:
+        rebuilt = start + timedelta(hours=hours)
+        if exp is None or rebuilt > exp:
+            exp = rebuilt
+    if not exp:
+        return False
+    return datetime.utcnow() > (exp + timedelta(minutes=10))
 
 
 # ---------- Email (SMTP) ----------
@@ -1060,6 +1074,11 @@ def create_assessment():
         "lastVideoAt": body.get("lastVideoAt"),
         "videoHistory": body.get("videoHistory") or [],
         "allowMobile": bool(body.get("allowMobile")),
+        "storePhotos": body.get("storePhotos") if body.get("storePhotos") is not None else True,
+        "linkValidFrom": body.get("linkValidFrom"),
+        "totalMarks": body.get("totalMarks") or 100,
+        "sessionId": body.get("sessionId"),
+        "lastActivityAt": body.get("lastActivityAt"),
     }
     data.append(item)
     save_assessments(data)

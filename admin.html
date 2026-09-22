@@ -1356,7 +1356,9 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       if (!a) return b;
       if (!b) return a;
       const rank = (x) => {
-        if (x.status === 'completed') return 5;
+        if (x.status === 'completed') return 6;
+        // Flagged but already has score/answers after submit race — treat nearly as complete
+        if (x.status === 'flagged' && (x.score != null || x.completedAt)) return 5;
         if (x.status === 'flagged') return 3;
         if (x.status === 'in-progress') return 2;
         if (x.status === 'missed' || x.status === 'expired') return 1;
@@ -2091,7 +2093,9 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       return '—';
     }
     function resultBadge(a) {
-      if (a.status !== 'completed' && a.score == null && !isFinalScored(a)) return '—';
+      const hasScore = a.score != null && a.score !== '';
+      const calc = (!hasScore && !isFinalScored(a)) ? computeMcqFromAnswers(a) : null;
+      if (a.status !== 'completed' && !hasScore && !isFinalScored(a) && !calc) return '—';
       const t = totalScore(a);
       const pass = getPassMark();
       if (t >= pass) return '<span class="badge" style="background:#d1fae5;color:#065f46;">PASS</span>';
@@ -2665,7 +2669,8 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       const base = a.expiresAt ? new Date(a.expiresAt).getTime() : Date.now();
       const from = Math.max(base, Date.now());
       a.expiresAt = new Date(from + 60 * 60 * 1000).toISOString();
-      if (a.status === 'expired') a.status = 'pending';
+      a.linkValidFrom = a.linkValidFrom || new Date().toISOString();
+      if (a.status === 'expired' || a.status === 'missed') a.status = 'pending';
       a.statusNote = (a.statusNote ? a.statusNote + ' · ' : '') + 'Extended +1h';
       saveOneAssessment(list, id);
       if (typeof logActivity === 'function') logActivity('Extended link +1h', a.name);
@@ -4068,8 +4073,50 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
       alert('Cleared media for ' + n + ' candidate(s) older than ' + days + ' days.');
     }
 
-function refreshAll() {
+
+    function healAssessmentRecords() {
+      const list = getAssessments();
+      let changed = [];
+      list.forEach(function(a) {
+        if (!a || !a.id) return;
+        let dirty = false;
+        // Fill missing MCQ score from answers
+        if ((a.score == null || a.score === '') && a.answers && Object.keys(a.answers).length) {
+          const calc = typeof computeMcqFromAnswers === 'function' ? computeMcqFromAnswers(a) : null;
+          if (calc) {
+            a.score = calc.score;
+            a.mcqScore = calc.score;
+            a.mcqCorrect = calc.correct;
+            a.mcqCount = calc.count;
+            a.mcqTotal = calc.marks;
+            dirty = true;
+          }
+        }
+        // If completedAt exists but status still in-progress/flagged → completed
+        if (a.completedAt && (a.status === 'in-progress' || a.status === 'flagged' || a.status === 'pending')) {
+          a.status = 'completed';
+          dirty = true;
+        }
+        // If score exists and status flagged with completedAt or many answers → completed
+        if (a.score != null && a.status === 'flagged' && (a.completedAt || (a.answers && Object.keys(a.answers).length >= 3))) {
+          a.status = 'completed';
+          if (!a.completedAt) a.completedAt = new Date().toISOString();
+          dirty = true;
+        }
+        if (dirty) changed.push(a.id);
+      });
+      if (changed.length) {
+        lsSet('assessments', JSON.stringify(list));
+        if (typeof saveSomeAssessments === 'function') {
+          try { saveSomeAssessments(list, changed); } catch (e) {}
+        }
+      }
+      return changed.length;
+    }
+
+    function refreshAll() {
       try { if (typeof autoMarkMissed === "function") autoMarkMissed(); } catch (e) {}
+      try { if (typeof healAssessmentRecords === "function") healAssessmentRecords(); } catch (e) {}
       try { renderDashboard(); } catch (e) { console.warn(e); }
       try { renderResults(); } catch (e) { console.warn(e); }
       try { renderFlagged(); } catch (e) { console.warn(e); }

@@ -214,6 +214,36 @@
     // scheduled-start checks use — never raw Date.now() for those.
     let serverOffsetMs = 0;
     function nowMs() { return Date.now() + serverOffsetMs; }
+    // Parse ISO timestamps as UTC when they use Z or have no offset (server stores UTC)
+    function parseUtcMs(ts) {
+      if (!ts) return NaN;
+      let t = String(ts).trim();
+      if (!t) return NaN;
+      if (!/[zZ]$/.test(t) && !/[+-]\d{2}:?\d{2}$/.test(t)) {
+        // "2026-09-22T14:00:00" or with ms — treat as UTC to match server storage
+        if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(t)) t = t + 'Z';
+      }
+      const ms = new Date(t).getTime();
+      return ms;
+    }
+    function isAssessmentLinkExpired(a) {
+      if (!a) return true;
+      // Grace for small clock skew between devices / server
+      const graceMs = 10 * 60 * 1000; // 10 minutes
+      const now = nowMs();
+      let expMs = parseUtcMs(a.expiresAt);
+      // Rebuild expiry from validity hours if expiresAt missing or clearly wrong
+      const hours = Number(a.linkValidityHours) || 24;
+      const fromMs = parseUtcMs(a.linkValidFrom) || parseUtcMs(a.scheduledAt) || parseUtcMs(a.createdAt) || NaN;
+      if (!isNaN(fromMs)) {
+        const rebuilt = fromMs + hours * 60 * 60 * 1000;
+        // Prefer the later of stored vs rebuilt so a bad short expiresAt cannot kill a 24h link
+        if (isNaN(expMs) || rebuilt > expMs) expMs = rebuilt;
+      }
+      if (isNaN(expMs)) return false; // no expiry info → allow
+      return now > (expMs + graceMs);
+    }
+
 
     // Merges any admin-edited questions (Admin → Question Bank) into the bundled
     // QUESTION_BANK global from questions.js, before this candidate's questions are
@@ -297,7 +327,13 @@
             }
             const serverMs = new Date(t).getTime();
             if (!isNaN(serverMs)) {
-              serverOffsetMs = serverMs - Date.now();
+              let off = serverMs - Date.now();
+              // Ignore absurd offsets (bad parse) — keep device clock
+              if (Math.abs(off) > 3 * 60 * 60 * 1000) {
+                console.warn('Server clock offset too large (' + Math.round(off/60000) + ' min) — using device time');
+                off = 0;
+              }
+              serverOffsetMs = off;
             }
           }
         }
@@ -324,7 +360,20 @@
                 scheduledAt: remote.scheduledAt,
                 duration: remote.duration,
                 linkValidityHours: remote.linkValidityHours,
+                linkValidFrom: remote.linkValidFrom,
+                token: remote.token || assessment.token,
               });
+              // If server already has final result, adopt it (avoids stale local "in-progress")
+              if (remote.status === 'completed') {
+                assessment.status = 'completed';
+                if (remote.score != null) assessment.score = remote.score;
+                if (remote.completedAt) assessment.completedAt = remote.completedAt;
+                if (remote.answers) assessment.answers = remote.answers;
+                if (remote.flags) assessment.flags = remote.flags;
+                if (remote.mcqScore != null) assessment.mcqScore = remote.mcqScore;
+                if (remote.mcqCorrect != null) assessment.mcqCorrect = remote.mcqCorrect;
+                if (remote.mcqCount != null) assessment.mcqCount = remote.mcqCount;
+              }
             } else {
               assessment = remote;
             }
@@ -364,8 +413,7 @@
 
       if (assessment.status === 'completed') {
         document.getElementById('completedUI').style.display = 'block';
-      showHelpFab(true);
-      showHelpFab(true);
+        showHelpFab(true);
         document.getElementById('scoreDisplay').textContent = `Score: ${assessment.score != null ? assessment.score : '—'} / 100`;
         if (assessment.candidateFeedback) {
           const box = document.getElementById('feedbackBox');
@@ -384,20 +432,24 @@
         return;
       }
 
-      // ===== Link expiry check =====
-      if (assessment.expiresAt && nowMs() > new Date(assessment.expiresAt).getTime()) {
+      // ===== Link expiry check (UTC-safe + 24h validity rebuild + grace) =====
+      if (isAssessmentLinkExpired(assessment)) {
         document.getElementById('linkExpiredUI').style.display = 'block';
         showHelpFab(true);
+        const expShow = assessment.expiresAt
+          ? new Date(parseUtcMs(assessment.expiresAt) || assessment.expiresAt).toLocaleString()
+          : 'unknown';
         document.getElementById('expiredMsg').innerHTML =
-          'This link expired on <strong>' + new Date(assessment.expiresAt).toLocaleString() + '</strong>.' +
-          '<br><br>Please contact the recruiter and ask them to click <strong>Resend / Generate New Link</strong> or <strong>+1h</strong> in Admin.';
+          'This link expired on <strong>' + expShow + '</strong>.' +
+          '<br><span style="font-size:0.85rem;color:#64748b;">Validity was ' + (assessment.linkValidityHours || 24) + ' hour(s).</span>' +
+          '<br><br>Please contact the recruiter and ask them to click <strong>Resend / Generate New Link</strong> or <strong>Extend +1h</strong> in Admin.';
         return;
       }
 
       // ===== Scheduled start check (not open yet) =====
       if (assessment.scheduledAt) {
-        const scheduledMs = new Date(assessment.scheduledAt).getTime();
-        if (nowMs() < scheduledMs) {
+        const scheduledMs = parseUtcMs(assessment.scheduledAt);
+        if (!isNaN(scheduledMs) && nowMs() < scheduledMs) {
           document.getElementById('notYetUI').style.display = 'block';
           showHelpFab(true);
           const leftMin = Math.max(1, Math.ceil((scheduledMs - nowMs()) / 60000));
