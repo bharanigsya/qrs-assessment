@@ -290,7 +290,15 @@
         if (healthRes.ok) {
           const health = await healthRes.json();
           if (health && health.time) {
-            serverOffsetMs = new Date(health.time).getTime() - Date.now();
+            // Backend sends UTC. Ensure we parse as UTC even if "Z" was missing.
+            let t = String(health.time).trim();
+            if (!/[zZ]$/.test(t) && !/[+-]\d{2}:?\d{2}$/.test(t)) {
+              t = t + 'Z';
+            }
+            const serverMs = new Date(t).getTime();
+            if (!isNaN(serverMs)) {
+              serverOffsetMs = serverMs - Date.now();
+            }
           }
         }
       } catch (e) {
@@ -395,7 +403,7 @@
           const leftMin = Math.max(1, Math.ceil((scheduledMs - nowMs()) / 60000));
           const unlockAt = new Date(assessment.scheduledAt);
           document.getElementById('notYetMsg').innerHTML =
-            '<div style="font-size:1.05rem;margin-bottom:0.5rem;">Locked until <strong>' + unlockAt.toLocaleString() + '</strong></div>' +
+            '<div style="font-size:1.05rem;margin-bottom:0.5rem;">Locked until <strong>' + unlockAt.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) + '</strong> <span style="font-size:0.85rem;color:#64748b;">(' + (Intl.DateTimeFormat().resolvedOptions().timeZone || 'local') + ')</span></div>' +
             '<div id="lockCountdown" style="font-size:1.6rem;font-weight:700;color:#4f46e5;margin:0.5rem 0;">--:--:--</div>' +
             '<div style="font-size:0.9rem;">Please wait. This page updates automatically and will open when the time starts.</div>';
           const tick = () => {

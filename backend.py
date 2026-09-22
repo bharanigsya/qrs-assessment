@@ -891,7 +891,7 @@ def health():
             "storage": storage,
             "candidates": count,
             "email_configured": EMAIL_CONFIGURED,
-            "time": datetime.utcnow().isoformat(),
+            "time": datetime.utcnow().isoformat() + "Z",
         }
     )
 
