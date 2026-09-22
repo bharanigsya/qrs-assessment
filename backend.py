@@ -21,6 +21,7 @@ from flask_cors import CORS
 BASE = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE, "data", "assessments.json")
 ADMIN_FILE = os.path.join(BASE, "data", "admin.json")
+SETTINGS_FILE = os.path.join(BASE, "data", "settings.json")
 BACKUP_DIR = os.path.join(BASE, "data", "backups")
 MAX_BACKUPS = 30
 
@@ -166,6 +167,11 @@ def db_init():
             snapshot JSONB NOT NULL,
             note TEXT,
             created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value JSONB NOT NULL,
+            updated_at TIMESTAMPTZ DEFAULT NOW()
         );
         """
     )
@@ -518,6 +524,52 @@ def save_admin(cred):
         json.dump(cred, f, indent=2)
 
 
+# ---------- Settings (currently: question bank overrides) ----------
+# A small generic key/value JSON store, reusing the same DB-or-file pattern as
+# admin credentials above. Used by the in-admin Question Bank editor so admins
+# can add/edit questions without touching questions.js directly. Overrides are
+# public to GET (candidates' test.html needs to read them too), but only an
+# admin can write.
+def load_settings():
+    if USE_DB:
+        conn = get_pg()
+        cur = conn.cursor()
+        cur.execute("SELECT value FROM settings WHERE key=%s", ("question_overrides",))
+        row = cur.fetchone()
+        cur.close()
+        put_pg(conn)
+        if row:
+            v = row[0]
+            return v if isinstance(v, dict) else json.loads(v)
+        return {}
+    if not os.path.exists(SETTINGS_FILE):
+        return {}
+    try:
+        with open(SETTINGS_FILE, "r") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def save_settings(data):
+    if USE_DB:
+        conn = get_pg()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO settings (key, value, updated_at) VALUES (%s, %s::jsonb, NOW())
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+            """,
+            ("question_overrides", json.dumps(data)),
+        )
+        cur.close()
+        put_pg(conn)
+        return
+    os.makedirs(os.path.join(BASE, "data"), exist_ok=True)
+    with open(SETTINGS_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+
 def append_media(aid, kind, data_url, meta=None):
     """Store photo/video. In DB mode uses assessment_media table + updates payload summary."""
     meta = meta or {}
@@ -844,6 +896,54 @@ def health():
     )
 
 
+# ---------- Question Bank overrides (in-admin editor) ----------
+@app.route("/api/questions", methods=["GET"])
+def list_question_overrides():
+    """Public — test.html needs this for every candidate, not just admins."""
+    return jsonify({"overrides": load_settings()})
+
+
+@app.route("/api/questions/<role>/<level>", methods=["PUT"])
+def put_question_override(role, level):
+    if not current_admin():
+        return jsonify({"error": "Unauthorized"}), 401
+    body = request.get_json(force=True) or {}
+    questions = body.get("questions")
+    if not isinstance(questions, list) or not questions:
+        return jsonify({"error": "questions must be a non-empty list"}), 400
+    for i, q in enumerate(questions):
+        if not q.get("id") or not q.get("type") or not q.get("question"):
+            return jsonify({"error": f"Question #{i+1} is missing id/type/question"}), 400
+        if q.get("type") == "mcq" and (not q.get("options") or q.get("correct") is None):
+            return jsonify({"error": f"Question #{i+1} (MCQ) needs options and a correct answer"}), 400
+    duration = body.get("duration") or 45
+    total_marks = sum(int(q.get("marks") or 0) for q in questions)
+    overrides = load_settings()
+    key = f"{role.lower()}/{level.lower()}"
+    overrides[key] = {
+        "duration": duration,
+        "questions": questions,
+        "totalMarks": total_marks,
+        "updatedAt": datetime.utcnow().isoformat(),
+        "updatedBy": (current_admin() or {}).get("user", "admin"),
+    }
+    save_settings(overrides)
+    return jsonify({"ok": True, "totalMarks": total_marks})
+
+
+@app.route("/api/questions/<role>/<level>", methods=["DELETE"])
+def delete_question_override(role, level):
+    """Revert a role/level back to the bundled questions.js defaults."""
+    if not current_admin():
+        return jsonify({"error": "Unauthorized"}), 401
+    overrides = load_settings()
+    key = f"{role.lower()}/{level.lower()}"
+    if key in overrides:
+        del overrides[key]
+        save_settings(overrides)
+    return jsonify({"ok": True})
+
+
 @app.route("/api/admin/login", methods=["POST"])
 def admin_login():
     body = request.get_json(force=True) or {}
@@ -960,11 +1060,6 @@ def create_assessment():
         "lastVideoAt": body.get("lastVideoAt"),
         "videoHistory": body.get("videoHistory") or [],
         "allowMobile": bool(body.get("allowMobile")),
-        # Was previously missing here entirely, which meant unchecking "Store proctor
-        # photos" in admin only worked if the candidate happened to share the admin's
-        # own browser (localStorage). Any real candidate opening the link fresh on
-        # their own device got the default (True) regardless of what was chosen.
-        "storePhotos": True if body.get("storePhotos") is None else bool(body.get("storePhotos")),
     }
     data.append(item)
     save_assessments(data)
@@ -1016,10 +1111,6 @@ def add_photo(aid):
     admin_rec = current_admin()
     if not admin_rec and not candidate_token_ok(existing, body.get("token")):
         return jsonify({"error": "Unauthorized"}), 401
-    # Respect the admin's "Store proctor photos" toggle server-side too — the client
-    # already skips capturing when this is off, but don't rely on that alone.
-    if existing.get("storePhotos") is False and not admin_rec:
-        return jsonify({"ok": True, "skipped": "storePhotos is off for this candidate"}), 200
     payload, err = append_media(aid, "photo", img, {"at": at})
     if err:
         return jsonify({"error": err}), 404

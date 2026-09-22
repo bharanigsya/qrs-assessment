@@ -684,9 +684,10 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       <!-- QUESTION BANK -->
       <div id="tab-qbank" class="tab-content">
         <div class="card">
-          <h2 class="card-title">Question Bank Viewer</h2>
+          <h2 class="card-title">Question Bank Editor</h2>
+          <p style="font-size:0.85rem;color:var(--muted);margin-bottom:0.8rem;">Edit questions for any role/level without touching questions.js. Changes apply to every new candidate assigned this role/level — already-assigned candidates keep whatever questions they were given.</p>
           <div class="filter-bar">
-            <select id="qbankRole" onchange="renderQBank()">
+            <select id="qbankRole" onchange="loadQBankWorkingSet()">
               <option value="salesforce">Salesforce</option>
               <option value="pc">Project Coordinator</option>
               <option value="integration">Integration</option>
@@ -698,13 +699,27 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
               <option value="finance">Finance</option>
                 <option value="data_analytics">Data Analytics</option>
             </select>
-            <select id="qbankLevel" onchange="renderQBank()">
+            <select id="qbankLevel" onchange="loadQBankWorkingSet()">
               <option value="fresher">Fresher</option>
               <option value="intern">Intern</option>
               <option value="experienced">Experienced</option>
             </select>
+            <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.85rem;">Duration (min)
+              <input type="number" id="qbankDuration" min="1" max="600" style="width:80px;" onchange="qbankSetDuration(this.value)">
+            </label>
           </div>
-          <div id="qbankContent"><p style="color:#64748b;">Select role and level.</p></div>
+          <div id="qbankMarksBar" style="margin:0.6rem 0;font-size:0.88rem;"></div>
+          <div id="qbankOverrideNote" style="margin-bottom:0.6rem;"></div>
+          <div id="qbankContent"><p style="color:#64748b;">Loading...</p></div>
+          <div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">
+            <button class="btn btn-outline" onclick="qbankAddQuestion('mcq')">+ Add MCQ</button>
+            <button class="btn btn-outline" onclick="qbankAddQuestion('coding')">+ Add Coding Question</button>
+            <button class="btn btn-outline" onclick="qbankAddQuestion('voice')">+ Add Voice Question</button>
+          </div>
+          <div style="margin-top:1.2rem;display:flex;gap:0.6rem;flex-wrap:wrap;border-top:1px solid var(--border);padding-top:1rem;">
+            <button class="btn btn-primary" onclick="qbankSave()">💾 Save Changes</button>
+            <button class="btn btn-outline" onclick="qbankRevertToDefault()">↩ Revert to Default (questions.js)</button>
+          </div>
         </div>
       </div>
 
@@ -1216,7 +1231,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       if (name === 'shortlist') renderShortlist();
       if (name === 'flags') renderFlagged();
       if (name === 'ranking') renderRanking();
-      if (name === 'qbank') renderQBank();
+      if (name === 'qbank') loadQBankWorkingSet();
       if (name === 'bulk') document.getElementById('bulkResults').innerHTML = '';
       if (name === 'similarity') document.getElementById('simResults').innerHTML = '<p style="color:#64748b;font-size:0.9rem;">Select a role & level and click "Run Check".</p>';
       if (name === 'settings') {
@@ -1739,9 +1754,21 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       const linkValidityHours = parseInt(document.getElementById('linkValidity').value, 10);
       const scheduledAtInput = document.getElementById('scheduledAt').value;
       if (!name || !email) return alert('Please enter Name and Email');
-      const existingDup = getAssessments().filter(a => (a.email || '').toLowerCase() === email.toLowerCase());
-      if (existingDup.length) {
-        if (!confirm('Warning: this email already has ' + existingDup.length + ' assessment(s). Continue?')) return;
+      const existing = getAssessments();
+      const emailDup = existing.filter(a => a.email && email && a.email.toLowerCase() === email.toLowerCase());
+      const mobileDup = mobile ? existing.filter(a => a.mobile && a.mobile.trim() === mobile && !emailDup.includes(a)) : [];
+      const allDup = emailDup.concat(mobileDup);
+      if (allDup.length) {
+        const lines = allDup.slice(0, 5).map(a =>
+          '• ' + a.name + ' — ' + a.role + ' (' + a.level + ') — ' + a.status +
+          (a.createdAt ? ' — assigned ' + new Date(a.createdAt).toLocaleDateString() : '')
+        ).join('\n');
+        const matchedOn = emailDup.length && mobileDup.length ? 'email and/or mobile number' : (emailDup.length ? 'email' : 'mobile number');
+        if (!confirm(
+          '⚠️ Possible duplicate — this ' + matchedOn + ' is already on file:\n\n' + lines +
+          (allDup.length > 5 ? '\n…and ' + (allDup.length - 5) + ' more' : '') +
+          '\n\nCreate another assessment for ' + name + ' anyway?'
+        )) return;
       }
       if (typeof isCoordinator === 'function' && isCoordinator()) {
         const allowed = getCoordRoleLocks();
@@ -2104,6 +2131,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       const list = getAssessments();
       const results = [];
       const errors = [];
+      const duplicates = [];
 
       lines.forEach((line, i) => {
         const parts = line.split(',').map(p => p.trim());
@@ -2112,6 +2140,17 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
           errors.push('Line ' + (i + 1) + ': needs Name, Email, Mobile, Role, Level — got "' + line + '"');
           return;
         }
+
+        // Duplicate check — against existing candidates AND earlier rows already added in
+        // this same paste (catches an accidentally duplicated row in the pasted list too).
+        const dupMatch = list.find(a =>
+          (a.email && a.email.toLowerCase() === email.toLowerCase()) ||
+          (mobile && a.mobile && a.mobile.trim() === mobile)
+        );
+        if (dupMatch) {
+          duplicates.push('Line ' + (i + 1) + ' (' + name + ', ' + email + '): already exists as "' + dupMatch.name + '" — ' + dupMatch.status);
+        }
+
         const roleKey = role.toLowerCase();
         const levelKey = level.toLowerCase();
         const assessmentData = getAssessment(roleKey, levelKey);
@@ -2164,6 +2203,14 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         list.unshift(record);
         results.push({ name, email, link: 'test.html?id=' + id + '&token=' + token, record });
       });
+
+      if (duplicates.length) {
+        const shown = duplicates.slice(0, 8).join('\n');
+        const more = duplicates.length > 8 ? '\n…and ' + (duplicates.length - 8) + ' more' : '';
+        if (!confirm('⚠️ ' + duplicates.length + ' possible duplicate(s) found in this batch:\n\n' + shown + more + '\n\nCreate all ' + results.length + ' candidate(s) anyway? (Cancel to go back and edit your list first — nothing has been saved yet.)')) {
+          return;
+        }
+      }
 
       const syncResults = await saveSomeAssessments(list, results.map(r => r.record.id));
       const failedCount = syncResults.filter(ok => !ok).length;
@@ -2861,21 +2908,170 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       }).join('') : '<tr><td colspan="9" style="text-align:center;color:#94a3b8;">No completed assessments yet</td></tr>';
     }
 
-    function renderQBank() {
+    // ===== Question Bank Editor =====
+    // In-memory working copy of whatever role/level is currently selected. All edits
+    // mutate this directly; nothing is sent to the backend until "Save Changes".
+    let qbankWorkingSet = null; // { role, level, duration, questions: [...] }
+    let qbankIsOverride = false;
+
+    async function loadQBankWorkingSet() {
       const role = document.getElementById('qbankRole').value;
       const level = document.getElementById('qbankLevel').value;
-      const data = getAssessment(role, level);
       const el = document.getElementById('qbankContent');
-      if (!data) { el.innerHTML = '<p style="color:#991b1b;">No questions found.</p>'; return; }
-      let html = '<p><strong>' + role.toUpperCase() + ' — ' + level + '</strong> · ' + data.duration + ' min · <strong>100 marks</strong> · ' + data.questions.length + ' questions</p><hr style="margin:0.8rem 0;">';
-      data.questions.forEach(function(q, i) {
-        html += '<div style="margin-bottom:1rem;padding:0.8rem;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">';
-        html += '<strong>Q' + (i+1) + '</strong> <span class="badge" style="background:#e0e7ff;color:#3730a3;">' + q.type + '</span> <span style="color:#64748b;">' + q.marks + ' marks</span><br>';
-        html += q.question;
-        if (q.options) html += '<ul style="margin:0.4rem 0 0 1.2rem;font-size:0.88rem;">' + q.options.map(function(o, oi){ return '<li>' + (oi===q.correct?'<strong>':'') + o + (oi===q.correct?' ✓</strong>':'') + '</li>'; }).join('') + '</ul>';
-        html += '</div>';
-      });
-      el.innerHTML = html;
+      el.innerHTML = '<p style="color:#64748b;">Loading...</p>';
+      let override = null;
+      try {
+        const res = await fetch(`${BACKEND_BASE}/api/questions`);
+        if (res.ok) {
+          const data = await res.json();
+          override = (data.overrides || {})[role + '/' + level] || null;
+        }
+      } catch (e) {
+        console.warn('Could not check for question overrides:', e);
+      }
+      if (override) {
+        qbankWorkingSet = {
+          role, level,
+          duration: override.duration,
+          // Deep copy so editing doesn't mutate anything else until Save is clicked.
+          questions: JSON.parse(JSON.stringify(override.questions)),
+        };
+        qbankIsOverride = true;
+      } else {
+        const bundled = getAssessment(role, level);
+        if (!bundled) { el.innerHTML = '<p style="color:#991b1b;">No questions found for this role/level.</p>'; return; }
+        qbankWorkingSet = {
+          role, level,
+          duration: bundled.duration,
+          questions: JSON.parse(JSON.stringify(bundled.questions)),
+        };
+        qbankIsOverride = false;
+      }
+      document.getElementById('qbankDuration').value = qbankWorkingSet.duration;
+      renderQBankEditor();
+    }
+
+    function renderQBankEditor() {
+      const el = document.getElementById('qbankContent');
+      const noteEl = document.getElementById('qbankOverrideNote');
+      noteEl.innerHTML = qbankIsOverride
+        ? '<span class="badge" style="background:#fef3c7;color:#b45309;">✏️ Custom (edited)</span> <span style="font-size:0.8rem;color:var(--muted);">This role/level has been customized — candidates get these questions, not the questions.js defaults.</span>'
+        : '<span class="badge" style="background:#e0e7ff;color:#3730a3;">Default</span> <span style="font-size:0.8rem;color:var(--muted);">Showing the bundled questions.js defaults — not yet customized.</span>';
+
+      const total = qbankWorkingSet.questions.reduce((s, q) => s + (parseInt(q.marks, 10) || 0), 0);
+      const marksEl = document.getElementById('qbankMarksBar');
+      marksEl.innerHTML = '<strong>Total marks: ' + total + ' / 100</strong>' +
+        (total !== 100 ? ' <span style="color:#dc2626;">⚠️ Should total exactly 100</span>' : ' <span style="color:#059669;">✓</span>');
+
+      el.innerHTML = qbankWorkingSet.questions.map((q, i) => {
+        let fields = '';
+        if (q.type === 'mcq') {
+          const opts = q.options || ['', '', '', ''];
+          fields = '<div style="margin-top:0.5rem;">' + opts.map((o, oi) =>
+            '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.3rem;">' +
+              '<input type="radio" name="qbank_correct_' + i + '" ' + (q.correct === oi ? 'checked' : '') + ' onchange="qbankSetCorrect(' + i + ',' + oi + ')" style="width:auto;">' +
+              '<input type="text" value="' + escapeAttr(o) + '" placeholder="Option ' + (oi + 1) + '" style="flex:1;padding:0.4rem 0.6rem;font-size:0.85rem;" oninput="qbankUpdateOption(' + i + ',' + oi + ',this.value)">' +
+            '</div>'
+          ).join('') + '<small style="color:var(--muted);">Select the radio button next to the correct option.</small></div>';
+        } else if (q.type === 'coding') {
+          fields = '<div style="display:flex;gap:0.6rem;margin-top:0.5rem;flex-wrap:wrap;">' +
+            '<label style="font-size:0.82rem;">Language <input type="text" value="' + escapeAttr(q.language || '') + '" style="width:110px;padding:0.3rem 0.5rem;" oninput="qbankUpdateField(' + i + ',\'language\',this.value)"></label>' +
+            '<label style="font-size:0.82rem;">Min length <input type="number" value="' + (q.minLength || 50) + '" style="width:80px;padding:0.3rem 0.5rem;" oninput="qbankUpdateField(' + i + ',\'minLength\',parseInt(this.value,10)||50)"></label>' +
+          '</div>';
+        }
+        return '<div style="margin-bottom:1rem;padding:0.8rem;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">' +
+          '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;">' +
+            '<strong>Q' + (i + 1) + '</strong>' +
+            '<div style="display:flex;align-items:center;gap:0.5rem;">' +
+              '<span class="badge" style="background:#e0e7ff;color:#3730a3;">' + q.type + '</span>' +
+              '<label style="font-size:0.8rem;">Marks <input type="number" value="' + (q.marks || 0) + '" style="width:60px;padding:0.25rem 0.4rem;" oninput="qbankUpdateField(' + i + ',\'marks\',parseInt(this.value,10)||0)"></label>' +
+              '<button class="btn btn-danger" style="padding:0.2rem 0.5rem;font-size:0.76rem;" onclick="qbankDeleteQuestion(' + i + ')">🗑</button>' +
+            '</div>' +
+          '</div>' +
+          '<textarea style="width:100%;margin-top:0.5rem;min-height:60px;padding:0.5rem;font-size:0.88rem;" oninput="qbankUpdateField(' + i + ',\'question\',this.value)">' + escapeHtml(q.question || '') + '</textarea>' +
+          fields +
+        '</div>';
+      }).join('');
+    }
+
+    function escapeAttr(s) { return String(s || '').replace(/"/g, '&quot;'); }
+    function escapeHtml(s) { return String(s || '').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    function qbankSetDuration(v) {
+      if (!qbankWorkingSet) return;
+      qbankWorkingSet.duration = parseInt(v, 10) || qbankWorkingSet.duration;
+    }
+    function qbankUpdateField(i, field, value) {
+      if (!qbankWorkingSet) return;
+      qbankWorkingSet.questions[i][field] = value;
+      if (field === 'marks') renderQBankEditor(); // refresh the marks total display
+    }
+    function qbankUpdateOption(i, oi, value) {
+      if (!qbankWorkingSet) return;
+      if (!qbankWorkingSet.questions[i].options) qbankWorkingSet.questions[i].options = ['', '', '', ''];
+      qbankWorkingSet.questions[i].options[oi] = value;
+    }
+    function qbankSetCorrect(i, oi) {
+      if (!qbankWorkingSet) return;
+      qbankWorkingSet.questions[i].correct = oi;
+    }
+    function qbankDeleteQuestion(i) {
+      if (!qbankWorkingSet) return;
+      if (!confirm('Delete question ' + (i + 1) + '? This only takes effect after you click Save Changes.')) return;
+      qbankWorkingSet.questions.splice(i, 1);
+      renderQBankEditor();
+    }
+    function qbankAddQuestion(type) {
+      if (!qbankWorkingSet) return;
+      const idBase = qbankWorkingSet.role + '_' + qbankWorkingSet.level + '_custom_';
+      const newId = idBase + Date.now().toString(36);
+      const q = { id: newId, type, marks: 5, question: '' };
+      if (type === 'mcq') { q.options = ['', '', '', '']; q.correct = 0; }
+      if (type === 'coding') { q.language = 'text'; q.minLength = 50; }
+      qbankWorkingSet.questions.push(q);
+      renderQBankEditor();
+    }
+
+    async function qbankSave() {
+      if (!qbankWorkingSet) return;
+      const empty = qbankWorkingSet.questions.find(q => !q.question || !q.question.trim());
+      if (empty) return alert('Every question needs question text before saving.');
+      const badMcq = qbankWorkingSet.questions.find(q => q.type === 'mcq' && (!q.options || q.options.some(o => !o || !o.trim())));
+      if (badMcq) return alert('Every MCQ needs all 4 options filled in.');
+      const total = qbankWorkingSet.questions.reduce((s, q) => s + (parseInt(q.marks, 10) || 0), 0);
+      if (total !== 100 && !confirm('Total marks is ' + total + ', not 100. Save anyway?')) return;
+      try {
+        const res = await fetch(`${BACKEND_BASE}/api/questions/${qbankWorkingSet.role}/${qbankWorkingSet.level}`, {
+          method: 'PUT',
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ duration: qbankWorkingSet.duration, questions: qbankWorkingSet.questions }),
+        });
+        if (res.status === 401) { forceReLogin(); return; }
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) return alert('Save failed: ' + (data.error || res.status));
+        if (typeof logActivity === 'function') logActivity('Edited Question Bank', qbankWorkingSet.role + ' / ' + qbankWorkingSet.level);
+        alert('Saved! Candidates assigned this role/level from now on will get these questions.');
+        qbankIsOverride = true;
+        renderQBankEditor();
+      } catch (e) {
+        alert('Could not reach the backend to save: ' + e.message);
+      }
+    }
+
+    async function qbankRevertToDefault() {
+      if (!qbankWorkingSet) return;
+      if (!confirm('Revert ' + qbankWorkingSet.role + ' / ' + qbankWorkingSet.level + ' back to the bundled questions.js defaults? Your edits will be discarded.')) return;
+      try {
+        const res = await fetch(`${BACKEND_BASE}/api/questions/${qbankWorkingSet.role}/${qbankWorkingSet.level}`, {
+          method: 'DELETE',
+          headers: authHeaders(),
+        });
+        if (res.status === 401) { forceReLogin(); return; }
+        if (typeof logActivity === 'function') logActivity('Reverted Question Bank to default', qbankWorkingSet.role + ' / ' + qbankWorkingSet.level);
+      } catch (e) {
+        console.warn('Revert failed:', e);
+      }
+      loadQBankWorkingSet();
     }
 
     function viewDetail(id) {
@@ -3394,7 +3590,24 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
           '</div>' +
           '<span class="badge" style="background:#d1fae5;color:#065f46;">LIVE</span>' +
         '</div>';
-      }).join('');
+      }).join('') + (staleList.length
+        ? '<p style="grid-column:1/-1;color:#b45309;font-size:0.82rem;margin-top:0.6rem;">⚠️ ' + staleList.length + ' more candidate(s) show "in progress" but haven\'t been active in over 3 minutes — likely closed their browser without finishing. <button class="btn btn-outline" style="padding:0.15rem 0.5rem;font-size:0.75rem;" onclick="showStaleInProgress()">View them</button></p>'
+        : '');
+    }
+
+    // Shows candidates stuck at "in-progress"/"flagged" with no real activity for 3+
+    // minutes — these were excluded from the main Live Monitoring grid (see renderLiveMonitor)
+    // because they're not actually being taken right now, just never properly closed out.
+    function showStaleInProgress() {
+      const STALE_MS = 3 * 60 * 1000;
+      const stale = getAssessments().filter(a => {
+        if (a.status !== 'in-progress' && a.status !== 'flagged') return false;
+        const t = a.lastActivityAt ? new Date(a.lastActivityAt).getTime() : (a.lastPhotoAt ? new Date(a.lastPhotoAt).getTime() : 0);
+        return !(t && (Date.now() - t) < STALE_MS);
+      });
+      if (!stale.length) return alert('No stale in-progress candidates right now.');
+      const lines = stale.map(a => '• ' + a.name + ' — ' + a.role + ' (' + a.level + ') — elapsed ' + fmtElapsed(a.startedAt) + ', last activity ' + (a.lastActivityAt ? new Date(a.lastActivityAt).toLocaleString() : 'never recorded'));
+      alert('Stale "in progress" candidates (inactive 3+ min, likely closed their browser):\n\n' + lines.join('\n') + '\n\nOpen each one\'s detail view to mark them Completed or Missed as appropriate.');
     }
 
     function fmtElapsed(startedAt) {
@@ -3421,13 +3634,21 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
     }
 
     function renderLiveMonitor() {
-      const list = getAssessments().filter(a => a.status === 'in-progress' || a.status === 'flagged');
+      const STALE_MS = 3 * 60 * 1000; // matches the "recent activity" window used elsewhere (second-device check)
+      const inProgress = getAssessments().filter(a => a.status === 'in-progress' || a.status === 'flagged');
+      const isRecent = a => {
+        const t = a.lastActivityAt ? new Date(a.lastActivityAt).getTime() : (a.lastPhotoAt ? new Date(a.lastPhotoAt).getTime() : 0);
+        return t && (Date.now() - t) < STALE_MS;
+      };
+      const list = inProgress.filter(isRecent);
+      const staleList = inProgress.filter(a => !isRecent(a));
       const grid = document.getElementById('liveMonitorGrid');
       const countEl = document.getElementById('liveCount');
       if (countEl) countEl.textContent = list.length + ' live';
       if (!grid) return;
       if (!list.length) {
-        grid.innerHTML = '<p style="color:#64748b;font-size:0.9rem;">No candidates currently in progress.</p>';
+        grid.innerHTML = '<p style="color:#64748b;font-size:0.9rem;">No candidates currently in progress.</p>' +
+          (staleList.length ? '<p style="color:#b45309;font-size:0.82rem;margin-top:0.5rem;">⚠️ ' + staleList.length + ' candidate(s) show "in progress" but haven\'t been active in over 3 minutes — likely closed their browser without finishing. <button class="btn btn-outline" style="padding:0.15rem 0.5rem;font-size:0.75rem;" onclick="showStaleInProgress()">View them</button></p>' : '');
         return;
       }
       grid.innerHTML = list.map(a => {

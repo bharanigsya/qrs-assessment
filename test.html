@@ -214,6 +214,31 @@
     // scheduled-start checks use — never raw Date.now() for those.
     let serverOffsetMs = 0;
     function nowMs() { return Date.now() + serverOffsetMs; }
+
+    // Merges any admin-edited questions (Admin → Question Bank) into the bundled
+    // QUESTION_BANK global from questions.js, before this candidate's questions are
+    // loaded. Silently falls back to the bundled defaults if nothing's overridden or
+    // the backend can't be reached — never blocks the exam on this.
+    async function applyQuestionOverrides() {
+      try {
+        const res = await fetch(`${BACKEND_BASE}/api/questions`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const overrides = (data && data.overrides) || {};
+        Object.keys(overrides).forEach(key => {
+          const [role, level] = key.split('/');
+          if (!role || !level || !overrides[key]) return;
+          if (typeof QUESTION_BANK === 'undefined') return;
+          if (!QUESTION_BANK[role]) QUESTION_BANK[role] = {};
+          QUESTION_BANK[role][level] = {
+            duration: overrides[key].duration || (QUESTION_BANK[role][level] && QUESTION_BANK[role][level].duration) || 45,
+            questions: overrides[key].questions,
+          };
+        });
+      } catch (e) {
+        console.warn('Could not load question bank overrides — using bundled defaults:', e);
+      }
+    }
     let questions = [];
     let currentIndex = 0;
     let answers = {};
@@ -389,6 +414,11 @@
           return;
         }
       }
+
+      // Pull in any question bank edits made in Admin → Question Bank before loading
+      // questions — falls back to the bundled questions.js defaults if none exist or if
+      // the backend is unreachable.
+      await applyQuestionOverrides();
 
       const data = getAssessment(assessment.role, assessment.level);
       if (!data) {
@@ -1074,7 +1104,7 @@
         html += `
           <p style="font-size:0.85rem; color:var(--muted); margin-bottom:0.5rem;">Language / Format: <strong>${q.language || 'text'}</strong> • Minimum ${minLen} characters required</p>
           <textarea class="code-area" id="code_${q.id}" placeholder="Write your complete answer here (minimum ${minLen} characters)..." 
-            oninput="onCodingInput('${q.id}', ${minLen})">${val}</textarea>
+            oninput="onCodingInput('${q.id}', ${minLen})" onpaste="onCodingPaste('${q.id}', event)">${val}</textarea>
           <div class="char-count ${ok ? 'ok' : 'bad'}" id="charCount_${q.id}">
             ${len} / ${minLen} characters ${ok ? '✓' : '(minimum required)'}
           </div>
@@ -1119,6 +1149,22 @@
       }
       scheduleRecoverySync();
       renderQuestionDots();
+    }
+
+    // Flags large pastes into a coding answer — a strong signal the answer was copied
+    // from somewhere else rather than typed. A short paste (fixing a typo, pasting a
+    // variable name) is normal and not flagged; only a substantial one is.
+    const PASTE_FLAG_THRESHOLD = 40; // characters
+    function onCodingPaste(qid, event) {
+      try {
+        const pasted = (event.clipboardData || window.clipboardData).getData('text') || '';
+        if (pasted.trim().length >= PASTE_FLAG_THRESHOLD) {
+          addFlag('Pasted ' + pasted.trim().length + ' characters into a coding answer (possible copy-paste)');
+        }
+      } catch (e) {
+        console.warn('Paste detection failed (non-fatal):', e);
+      }
+      // Never block the paste itself — just record the signal for the recruiter to review.
     }
 
     function saveAnswer(qid, value) {
@@ -1459,6 +1505,10 @@
     }
     setInterval(() => {
       if (assessment && (assessment.status === 'in-progress' || assessment.status === 'flagged')) {
+        // Keep this fresh throughout the whole session, not just at page load — this is
+        // what admin.html's Live Monitoring relies on to tell "still actively taking the
+        // test" apart from "browser closed ages ago but status never got updated."
+        assessment.lastActivityAt = new Date().toISOString();
         syncAssessmentToBackend(2);
       }
     }, 10000);
