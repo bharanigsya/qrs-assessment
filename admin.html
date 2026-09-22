@@ -1236,6 +1236,28 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       return Promise.all(list.map(syncRecordToBackend));
     }
 
+    // Use this instead of saveAssessments() for single-candidate edits. Broadcasting the
+    // ENTIRE locally-cached list on every small action (tagging, +1h, marking complete,
+    // etc.) meant that if the admin's local copy of some OTHER, unrelated candidate was
+    // even slightly stale (e.g. they're actively answering questions right now and their
+    // own device is the one syncing their real progress), that stale copy would get PUT
+    // back to the backend right along with it — silently overwriting that other
+    // candidate's live answers/flags/status. This only ever touches the record(s) that
+    // actually changed.
+    function saveOneAssessment(list, id) {
+      lsSet('assessments', JSON.stringify(list));
+      const rec = list.find(x => x.id === id);
+      if (!rec) return Promise.resolve(false);
+      return syncRecordToBackend(rec);
+    }
+
+    function saveSomeAssessments(list, ids) {
+      lsSet('assessments', JSON.stringify(list));
+      const idSet = new Set(ids);
+      const toSync = list.filter(x => idSet.has(x.id));
+      return Promise.all(toSync.map(syncRecordToBackend));
+    }
+
     async function syncRecordToBackend(record) {
       try {
         // Don't re-upload full photo history on every save — the backend keeps its own
@@ -1345,6 +1367,39 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       return ta >= tb ? a : b;
     }
 
+    // Live Monitoring bug fix: preferAssessment() picks one WHOLE record (local vs. remote)
+    // based on answer/flag/score "richness" — but proctoring photos, videos, flags, and
+    // activity timestamps are only ever written by the candidate's OWN device straight to
+    // the backend. The admin's locally cached copy can never be more current for those
+    // fields, even when it "wins" the overall richness comparison (e.g. a fresh tie right
+    // after the candidate starts, before they've answered anything). Without this, Live
+    // Monitoring could keep showing an old/missing photo for an actively-proctored
+    // candidate for the whole test. This overlays the freshest photo/video/flag/activity
+    // data from the server onto whichever record was chosen, regardless of that choice.
+    function mergeLiveFields(chosen, remote) {
+      if (!remote || chosen === remote) return chosen;
+      const remotePhotoAt = remote.lastPhotoAt ? new Date(remote.lastPhotoAt).getTime() : 0;
+      const chosenPhotoAt = chosen.lastPhotoAt ? new Date(chosen.lastPhotoAt).getTime() : 0;
+      if (remotePhotoAt >= chosenPhotoAt) {
+        chosen.lastPhoto = remote.lastPhoto;
+        chosen.lastPhotoAt = remote.lastPhotoAt;
+        if (remote.photoHistory && remote.photoHistory.length) chosen.photoHistory = remote.photoHistory;
+      }
+      const remoteVidCount = (remote.videoHistory && remote.videoHistory.length) || 0;
+      const chosenVidCount = (chosen.videoHistory && chosen.videoHistory.length) || 0;
+      if (remoteVidCount >= chosenVidCount) {
+        chosen.videoHistory = remote.videoHistory;
+        chosen.lastVideoAt = remote.lastVideoAt;
+      }
+      if ((remote.flags || []).length > (chosen.flags || []).length) {
+        chosen.flags = remote.flags;
+      }
+      const remoteAct = remote.lastActivityAt ? new Date(remote.lastActivityAt).getTime() : 0;
+      const chosenAct = chosen.lastActivityAt ? new Date(chosen.lastActivityAt).getTime() : 0;
+      if (remoteAct > chosenAct) chosen.lastActivityAt = remote.lastActivityAt;
+      return chosen;
+    }
+
     async function restoreLocalToBackend() {
       const local = getAssessments();
       if (!local.length) return alert('No candidates saved in this browser to restore.');
@@ -1404,7 +1459,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
           // Merge without letting empty/thin remote wipe local completed records
           const byId = {};
           local.forEach(a => { byId[a.id] = a; });
-          remote.forEach(r => { byId[r.id] = preferAssessment(byId[r.id], r); });
+          remote.forEach(r => { byId[r.id] = mergeLiveFields(preferAssessment(byId[r.id], r), r); });
           lsSet('assessments', JSON.stringify(Object.values(byId)));
           return;
         }
@@ -1414,7 +1469,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
 
         const byId = {};
         local.forEach(a => { byId[a.id] = a; });
-        remote.forEach(r => { byId[r.id] = preferAssessment(byId[r.id], r); });
+        remote.forEach(r => { byId[r.id] = mergeLiveFields(preferAssessment(byId[r.id], r), r); });
         lsSet('assessments', JSON.stringify(Object.values(byId)));
       } catch (e) {
         console.warn('Backend pull failed (backend may not be running):', e);
@@ -1529,7 +1584,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       const idx = list.findIndex(x => x.id === id);
       if (idx < 0) return;
       list[idx].tag = tag;
-      saveAssessments(list);
+      saveOneAssessment(list, id);
       logActivity('Tagged candidate', list[idx].name + ' → ' + (tag || 'none'));
       refreshAll();
     }
@@ -2110,7 +2165,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         results.push({ name, email, link: 'test.html?id=' + id + '&token=' + token, record });
       });
 
-      const syncResults = await saveAssessments(list);
+      const syncResults = await saveSomeAssessments(list, results.map(r => r.record.id));
       const failedCount = syncResults.filter(ok => !ok).length;
       renderBulkResults(results, errors, failedCount);
       refreshAll();
@@ -2459,7 +2514,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       }
       list[idx].statusUpdatedAt = new Date().toISOString();
       list[idx].statusUpdatedBy = ssGet('qrs_admin_user') || 'admin';
-      saveAssessments(list);
+      saveOneAssessment(list, id);
       if (typeof logActivity === 'function') logActivity('Edited status/schedule', list[idx].name + ' → ' + st);
       document.getElementById('inlineEditPanel').style.display = 'none';
       refreshAll();
@@ -2481,7 +2536,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       list[idx].statusNote = (list[idx].statusNote ? list[idx].statusNote + ' · ' : '') + 'Admin marked completed';
       list[idx].statusUpdatedAt = new Date().toISOString();
       list[idx].statusUpdatedBy = ssGet('qrs_admin_user') || 'admin';
-      saveAssessments(list);
+      saveOneAssessment(list, a.id);
       if (typeof logActivity === 'function') logActivity('Marked completed', a.name);
       refreshAll();
       alert('Marked completed: ' + a.name + (a.score != null ? ' (MCQ score ' + a.score + ')' : ''));
@@ -2517,7 +2572,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       a.expiresAt = new Date(from + 60 * 60 * 1000).toISOString();
       if (a.status === 'expired') a.status = 'pending';
       a.statusNote = (a.statusNote ? a.statusNote + ' · ' : '') + 'Extended +1h';
-      saveAssessments(list);
+      saveOneAssessment(list, id);
       if (typeof logActivity === 'function') logActivity('Extended link +1h', a.name);
       refreshAll();
       alert('Link extended +1 hour for ' + a.name + '\nNew expiry: ' + new Date(a.expiresAt).toLocaleString());
@@ -2633,7 +2688,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       const idx = list.findIndex(x => x.id === id);
       if (idx === -1) return;
       list[idx].extraMinutes = (list[idx].extraMinutes || 0) + 10;
-      saveAssessments(list);
+      saveOneAssessment(list, id);
       alert('Added 10 minutes for ' + list[idx].name + '. (Candidate must refresh or we store for reference — full live sync needs backend.)');
       refreshAll();
     }
@@ -2665,7 +2720,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       }
       if (tEl) list[idx].tag = tEl.value || '';
       if (nEl) list[idx].adminNote = nEl.value || '';
-      saveAssessments(list);
+      saveOneAssessment(list, id);
       logActivity('Saved review', list[idx].name);
       alert('Review saved');
       viewDetail(id);
@@ -2681,7 +2736,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       const idx = list.findIndex(x => x.id === id);
       if (idx === -1) return;
       list[idx].voiceScore = v;
-      saveAssessments(list);
+      saveOneAssessment(list, id);
       alert('Voice score saved: ' + v);
       viewDetail(id);
       refreshAll();
@@ -2830,7 +2885,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         a.helpUnreadAdmin = false;
         const list = getAssessments();
         const i = list.findIndex(x => x.id === id);
-        if (i >= 0) { list[i].helpUnreadAdmin = false; saveAssessments(list); }
+        if (i >= 0) { list[i].helpUnreadAdmin = false; saveOneAssessment(list, id); }
         updateHelpBadge();
       }
       let html =
@@ -3143,7 +3198,7 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
       if (idx === -1) return;
       list[idx].flags = [];
       if (list[idx].status === 'flagged') list[idx].status = 'in-progress';
-      saveAssessments(list);
+      saveOneAssessment(list, id);
       refreshAll();
       alert('Candidate freed. Flags cleared.');
     }
@@ -3629,7 +3684,7 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
     
     function autoMarkMissed() {
       const list = getAssessments();
-      let changed = 0;
+      const justChangedIds = [];
       const now = Date.now();
       list.forEach(a => {
         if (!a || a.status === 'completed' || a.status === 'in-progress' || a.status === 'flagged' || a.status === 'missed') return;
@@ -3639,18 +3694,18 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
           a.status = 'missed';
           a.statusNote = (a.statusNote ? a.statusNote + ' · ' : '') + 'Auto: missed (link expired, never started)';
           a.statusUpdatedAt = new Date().toISOString();
-          changed++;
+          justChangedIds.push(a.id);
         }
       });
-      if (changed) {
+      if (justChangedIds.length) {
+        // Only sync the record(s) that actually flipped to "missed" just now — matching by
+        // "statusNote contains Auto:" would re-sync every candidate ever auto-marked missed
+        // on every 8-second refresh forever, which is both wasteful and unnecessary.
+        saveSomeAssessments(list, justChangedIds);
+      } else {
         lsSet('assessments', JSON.stringify(list));
-        list.forEach(a => {
-          if (a.statusNote && String(a.statusNote).indexOf('Auto:') >= 0) {
-            try { syncRecordToBackend(a); } catch (e) {}
-          }
-        });
       }
-      return changed;
+      return justChangedIds.length;
     }
 
     function renderNeedsAction() {
