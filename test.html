@@ -778,17 +778,27 @@
       setTimeout(tryOnce, 400);
     }
 
-    // Best-effort: send a single photo to the Flask backend so it's kept even if localStorage can't hold it all.
+    // Send proctor photo to backend with retries (cold start / brief offline)
     async function sendPhotoToBackend(imgDataUrl, atIso) {
-      try {
-        await fetch(`${BACKEND_BASE}/api/assessments/${assessment.id}/photos`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ img: imgDataUrl, at: atIso, token: assessment.token })
-        });
-      } catch (e) {
-        console.warn('Backend photo upload failed (backend may not be running):', e);
+      if (!assessment || !assessment.id || !imgDataUrl) return false;
+      for (let attempt = 0; attempt < 4; attempt++) {
+        try {
+          const res = await fetch(BACKEND_BASE + '/api/assessments/' + encodeURIComponent(assessment.id) + '/photos', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ img: imgDataUrl, at: atIso, token: assessment.token })
+          });
+          if (res.ok) {
+            console.log('Photo uploaded to backend');
+            return true;
+          }
+          console.warn('Photo upload HTTP ' + res.status);
+        } catch (e) {
+          console.warn('Photo upload attempt ' + (attempt + 1) + ' failed:', e);
+        }
+        await new Promise(r => setTimeout(r, 1200 * (attempt + 1)));
       }
+      return false;
     }
 
     // ========== Proctoring ==========
@@ -987,24 +997,43 @@
     let activeClipRecorder = null;
 
     function startPhotoCapture() {
+      // Only skip when admin explicitly disabled photos for this link
       if (assessment && assessment.storePhotos === false) {
         console.log('Photo capture skipped — storePhotos is off');
+        const cnt = document.getElementById('photoCountHint');
+        if (cnt) cnt.textContent = 'Proctor photos disabled for this link';
         return;
+      }
+      if (photoInterval) {
+        clearInterval(photoInterval);
+        photoInterval = null;
       }
       const video = document.getElementById('cameraFeed');
       const canvas = document.createElement('canvas');
-      // Captures a proctoring photo every 1 minute throughout the whole test.
-      // Mobile (when allowed): higher resolution + JPEG quality for clearer face photos.
+      // 1 photo every 1 minute after a reliable first capture
       const onMobile = !!(assessment && assessment.allowMobile && isMobileDevice());
       const MAX_CAPTURE_WIDTH = onMobile ? 1280 : 640;
       const JPEG_QUALITY = onMobile ? 0.92 : 0.78;
       const LOCAL_HISTORY_LIMIT = onMobile ? 4 : 6;
-      const capture = () => {
-        if (!video || !video.videoWidth || video.readyState < 2) return;
+      let firstOk = false;
+
+      const captureOnce = async function() {
         try {
+          if (!video) {
+            console.warn('Photo capture: no video element');
+            return false;
+          }
+          // Ensure stream is still playing
+          if (video.paused) {
+            try { await video.play(); } catch (e) {}
+          }
+          if (!video.videoWidth || video.readyState < 2) {
+            console.warn('Photo capture: camera not ready yet (readyState=' + (video.readyState || 0) + ')');
+            return false;
+          }
           const scale = Math.min(1, MAX_CAPTURE_WIDTH / video.videoWidth);
-          const w = Math.round(video.videoWidth * scale);
-          const h = Math.round(video.videoHeight * scale);
+          const w = Math.max(1, Math.round(video.videoWidth * scale));
+          const h = Math.max(1, Math.round(video.videoHeight * scale));
           canvas.width = w;
           canvas.height = h;
           const ctx = canvas.getContext('2d');
@@ -1012,27 +1041,62 @@
           ctx.imageSmoothingQuality = 'high';
           ctx.drawImage(video, 0, 0, w, h);
           const dataUrl = canvas.toDataURL('image/jpeg', JPEG_QUALITY);
+          if (!dataUrl || dataUrl.length < 1000) {
+            console.warn('Photo capture: empty/tiny frame');
+            return false;
+          }
           assessment.lastPhoto = dataUrl;
           assessment.lastPhotoAt = new Date().toISOString();
           if (!assessment.photoHistory) assessment.photoHistory = [];
           assessment.photoHistory.push({ img: dataUrl, at: assessment.lastPhotoAt });
-          // Keep only the most recent few locally — the backend is the permanent record.
           if (assessment.photoHistory.length > LOCAL_HISTORY_LIMIT) {
             assessment.photoHistory = assessment.photoHistory.slice(-LOCAL_HISTORY_LIMIT);
           }
           if (!assessment.photoCount) assessment.photoCount = 0;
           assessment.photoCount += 1;
-          saveAssessment();
+          // Persist lastPhoto locally + upload to backend (history stripped from bulk sync)
+          try {
+            const list = JSON.parse(lsGet('assessments') || '[]');
+            const idx = list.findIndex(function(a) { return a.id === assessment.id; });
+            if (idx >= 0) {
+              list[idx].lastPhoto = assessment.lastPhoto;
+              list[idx].lastPhotoAt = assessment.lastPhotoAt;
+              list[idx].photoCount = assessment.photoCount;
+              list[idx].photoHistory = assessment.photoHistory;
+              lsSet('assessments', JSON.stringify(list));
+            }
+          } catch (e) { console.warn(e); }
           sendPhotoToBackend(dataUrl, assessment.lastPhotoAt);
           const cnt = document.getElementById('photoCountHint');
           if (cnt) cnt.textContent = assessment.photoCount + ' photos captured · every 1 min';
           console.log('Proctor photo captured (#' + assessment.photoCount + ')');
+          return true;
         } catch (e) {
           console.warn('Photo capture failed', e);
+          return false;
         }
       };
-      setTimeout(capture, 5000); // first photo ~5s after start
-      photoInterval = setInterval(capture, 60000); // every 1 minute
+
+      // Aggressive first-photo retries (camera often not ready at 1–2s)
+      let tries = 0;
+      const tryFirst = async function() {
+        tries++;
+        const ok = await captureOnce();
+        if (ok) {
+          firstOk = true;
+          return;
+        }
+        if (tries < 12) setTimeout(tryFirst, 2500); // up to ~30s
+        else {
+          const cnt = document.getElementById('photoCountHint');
+          if (cnt) cnt.textContent = 'Camera photo pending — check camera permission';
+        }
+      };
+      setTimeout(tryFirst, 1500);
+
+      photoInterval = setInterval(function() {
+        captureOnce();
+      }, 60000); // every 1 minute
     }
 
     // 30-second video clip every 3 minutes
