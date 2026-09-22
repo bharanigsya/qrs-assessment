@@ -952,7 +952,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
 
 
     // Shared backend URL. Override with localStorage key `qrs_backend_base` if admin.html is hosted separately.
-    const DEFAULT_BACKEND_BASE = 'https://qrs-assessment.onrender.com';
+    const DEFAULT_BACKEND_BASE = (typeof location !== 'undefined' && location.origin && location.protocol !== 'file:') ? location.origin.replace(/\/$/, '') : 'https://qrs-assessment-l7gp.onrender.com';
     function resolveBackendBase() {
       try {
         const stored = (localStorage.getItem('qrs_backend_base') || '').trim();
@@ -2027,29 +2027,66 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       alert('Pass mark saved: ' + v);
       refreshAll();
     }
+    function computeMcqFromAnswers(a) {
+      if (!a || !a.answers || typeof QUESTION_BANK === 'undefined') return null;
+      try {
+        const bank = QUESTION_BANK[a.role] && QUESTION_BANK[a.role][a.level];
+        if (!bank || !bank.questions) return null;
+        let score = 0, correct = 0, count = 0, marks = 0;
+        bank.questions.forEach(function(q) {
+          if (q.type !== 'mcq') return;
+          count++;
+          marks += (q.marks || 0);
+          const ans = a.answers[q.id];
+          if (ans !== undefined && ans !== null && Number(ans) === Number(q.correct)) {
+            score += (q.marks || 0);
+            correct++;
+          }
+        });
+        if (count === 0) return null;
+        return { score: Math.min(100, score), correct: correct, count: count, marks: marks };
+      } catch (e) {
+        return null;
+      }
+    }
     function totalScore(a) {
       // Prefer admin final score when set (after coding/voice review)
       if (a.finalScore !== null && a.finalScore !== undefined && a.finalScore !== '') {
         return Math.min(100, Number(a.finalScore) || 0);
       }
-      const mcq = (a.score !== null && a.score !== undefined) ? Number(a.score) || 0 : 0;
-      const voice = (a.voiceScore !== null && a.voiceScore !== undefined) ? Number(a.voiceScore) || 0 : 0;
-      return Math.min(100, mcq + voice);
+      if (a.score !== null && a.score !== undefined && a.score !== '') {
+        const mcq = Number(a.score) || 0;
+        const voice = (a.voiceScore !== null && a.voiceScore !== undefined) ? Number(a.voiceScore) || 0 : 0;
+        return Math.min(100, mcq + voice);
+      }
+      // Fallback: recalculate MCQ from stored answers (if sync lost score but kept answers)
+      const calc = computeMcqFromAnswers(a);
+      if (calc) return calc.score;
+      return 0;
     }
     function isFinalScored(a) {
       return a.finalScore !== null && a.finalScore !== undefined && a.finalScore !== '';
     }
     function formatScoreCell(a) {
-      if (a.status !== 'completed' && a.score == null && !isFinalScored(a)) return '—';
-      const t = totalScore(a);
       if (isFinalScored(a)) {
-        return '<strong>' + t + '</strong>/100<br><small style="color:#059669;">Final</small>';
+        return '<strong>' + totalScore(a) + '</strong>/100<br><small style="color:#059669;">Final</small>';
       }
-      if (a.score != null) {
+      if (a.score != null && a.score !== '') {
         const mcqHint = (a.mcqCount != null)
           ? ('MCQ ' + (a.mcqCorrect || 0) + '/' + a.mcqCount)
           : 'MCQ only';
-        return '<strong>' + t + '</strong>/100<br><small style="color:#b45309;">Provisional · ' + mcqHint + '</small>';
+        const label = a.status === 'completed' ? 'Provisional' : (a.status === 'flagged' ? 'Flagged · scored' : 'Scored');
+        return '<strong>' + totalScore(a) + '</strong>/100<br><small style="color:#b45309;">' + label + ' · ' + mcqHint + '</small>';
+      }
+      const calc = computeMcqFromAnswers(a);
+      if (calc && Object.keys(a.answers || {}).length) {
+        return '<strong>' + calc.score + '</strong>/100<br><small style="color:#b45309;">Calculated · MCQ ' + calc.correct + '/' + calc.count + '</small>';
+      }
+      if (a.status === 'flagged') {
+        return '<span style="color:#b45309;">Flagged</span><br><small style="color:#94a3b8;">No score saved</small>';
+      }
+      if (a.status === 'completed') {
+        return '<span style="color:#94a3b8;">0/100</span><br><small>No MCQ score</small>';
       }
       return '—';
     }
@@ -2581,6 +2618,16 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       if (!confirm('Mark "' + a.name + '" as Completed?\n\nUse when the candidate finished but status is still In progress.')) return;
       list[idx].status = 'completed';
       if (!list[idx].completedAt) list[idx].completedAt = new Date().toISOString();
+      if (list[idx].score == null || list[idx].score === '') {
+        const calc = computeMcqFromAnswers(list[idx]);
+        if (calc) {
+          list[idx].score = calc.score;
+          list[idx].mcqScore = calc.score;
+          list[idx].mcqCorrect = calc.correct;
+          list[idx].mcqCount = calc.count;
+          list[idx].mcqTotal = calc.marks;
+        }
+      }
       list[idx].statusNote = (list[idx].statusNote ? list[idx].statusNote + ' · ' : '') + 'Admin marked completed';
       list[idx].statusUpdatedAt = new Date().toISOString();
       list[idx].statusUpdatedBy = ssGet('qrs_admin_user') || 'admin';

@@ -619,8 +619,18 @@
     // Shared backend configuration. If test.html is hosted separately from the Flask backend,
     // change this one URL to your backend's Render URL. It can also be overridden with
     // localStorage key `qrs_backend_base` without editing the file again.
-    const DEFAULT_BACKEND_BASE = 'https://qrs-assessment.onrender.com';
-    const BACKEND_BASE = (localStorage.getItem('qrs_backend_base') || DEFAULT_BACKEND_BASE).replace(/\/$/, '');
+    // Prefer same origin (correct on any Render URL). Override only via localStorage if needed.
+    const DEFAULT_BACKEND_BASE = (typeof location !== 'undefined' && location.origin && location.protocol !== 'file:')
+      ? location.origin.replace(/\/$/, '')
+      : 'https://qrs-assessment-l7gp.onrender.com';
+    function resolveTestBackendBase() {
+      try {
+        const s = localStorage.getItem('qrs_backend_base');
+        if (s && String(s).trim()) return String(s).trim().replace(/\/$/, '');
+      } catch (e) {}
+      return DEFAULT_BACKEND_BASE;
+    }
+    const BACKEND_BASE = resolveTestBackendBase();
     let backendOverflow = false; // once local storage fills, keep sending new photos straight to backend
 
     function saveAssessment() {
@@ -661,6 +671,10 @@
         token: assessment.token,
         status: assessment.status,
         score: assessment.score,
+        mcqScore: assessment.mcqScore,
+        mcqTotal: assessment.mcqTotal,
+        mcqCorrect: assessment.mcqCorrect,
+        mcqCount: assessment.mcqCount,
         answers: assessment.answers || {},
         flags: assessment.flags || [],
         completedAt: assessment.completedAt || null,
@@ -668,7 +682,8 @@
         name: assessment.name,
         email: assessment.email,
         role: assessment.role,
-        level: assessment.level
+        level: assessment.level,
+        lastActivityAt: assessment.lastActivityAt || new Date().toISOString()
       });
       for (let attempt = 0; attempt <= retries; attempt++) {
         try {
@@ -1303,6 +1318,7 @@
       // Cap at 100 for safety
       if (score > 100) score = 100;
 
+      // Always mark completed on submit (even if earlier status was flagged)
       assessment.status = 'completed';
       assessment.completedAt = new Date().toISOString();
       assessment.score = score;
@@ -1312,11 +1328,53 @@
       assessment.mcqCount = mcqCount;
       assessment.answers = answers;
       assessment.flags = flags;
-      saveAssessment();
-      // Immediate strong push of final result (do not wait only on background retries)
-      syncAssessmentToBackend(4).then(function(ok) {
-        if (!ok) console.warn('Immediate post-submit sync failed — background retries continue');
-      });
+      // Persist locally first
+      try {
+        const list = JSON.parse(lsGet('assessments') || '[]');
+        const idx = list.findIndex(a => a.id === assessment.id);
+        if (idx >= 0) list[idx] = assessment;
+        else list.push(assessment);
+        lsSet('assessments', JSON.stringify(list));
+      } catch (e) { console.warn(e); }
+      // Strong immediate sync with explicit result payload (not only saveAssessment path)
+      (async function forceResultSync() {
+        const payload = {
+          id: assessment.id,
+          token: assessment.token,
+          status: 'completed',
+          score: score,
+          mcqScore: mcqEarned,
+          mcqTotal: mcqMarks,
+          mcqCorrect: mcqCorrect,
+          mcqCount: mcqCount,
+          answers: answers,
+          flags: flags,
+          completedAt: assessment.completedAt,
+          startedAt: assessment.startedAt || null,
+          name: assessment.name,
+          email: assessment.email,
+          role: assessment.role,
+          level: assessment.level,
+          lastActivityAt: new Date().toISOString()
+        };
+        for (let i = 0; i < 6; i++) {
+          try {
+            const res = await fetch(BACKEND_BASE + '/api/assessments/' + encodeURIComponent(assessment.id), {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+            if (res.ok) {
+              console.log('Final result synced to backend');
+              return;
+            }
+            console.warn('Result sync HTTP', res.status);
+          } catch (e) {
+            console.warn('Result sync fail', e);
+          }
+          await new Promise(r => setTimeout(r, 1500 * (i + 1)));
+        }
+      })();
       ensureResultDelivered();
 
       document.getElementById('testUI').style.display = 'none';
