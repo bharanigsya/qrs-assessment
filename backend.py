@@ -377,6 +377,33 @@ def delete_one_assessment(aid):
     return True
 
 
+
+def client_ip():
+    """Best-effort client IP behind Render/proxy."""
+    xff = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+    if xff:
+        return xff
+    xri = (request.headers.get("X-Real-IP") or "").strip()
+    if xri:
+        return xri
+    return (request.remote_addr or "").strip() or None
+
+
+def attach_client_meta(body):
+    """Stamp IP / user-agent onto assessment body when candidate syncs."""
+    if not isinstance(body, dict):
+        return body
+    ip = client_ip()
+    ua = (request.headers.get("User-Agent") or "")[:300]
+    if ip and not body.get("clientIp"):
+        body["clientIp"] = ip
+    if ua and not body.get("userAgent"):
+        body["userAgent"] = ua
+    if ip:
+        body["lastSeenIp"] = ip
+    return body
+
+
 def upsert_assessment(aid, body, merge_existing=True):
     """Insert or update ONE assessment. In DB mode this touches only that one row —
     it used to reload and rewrite the entire assessments table (including every other
@@ -1098,6 +1125,7 @@ def get_assessment(aid):
 @app.route("/api/assessments/<aid>", methods=["PUT"])
 def update_assessment(aid):
     body = request.get_json(force=True) or {}
+    body = attach_client_meta(body)
     admin_rec = current_admin()
     existing = get_one_assessment(aid)
     if existing:

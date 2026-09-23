@@ -77,7 +77,12 @@
         <button class="btn btn-primary" id="startBtn" onclick="startTest()" style="padding:0.95rem 2.1rem; font-size:1.08rem;border-radius:12px;">
           🎥 Enable Camera & Start Test
         </button>
-        <p style="margin-top:0.85rem; font-size:0.85rem; color:var(--muted);">Camera + microphone permission will be requested</p>
+        <div style="margin-top:0.75rem;">
+          <button type="button" class="btn btn-outline" id="practiceBtn" onclick="startPracticeDemo()" style="padding:0.65rem 1.2rem;font-size:0.9rem;border-radius:10px;">
+            ⏱ Try 2-min practice (not scored)
+          </button>
+        </div>
+        <p style="margin-top:0.85rem; font-size:0.85rem; color:var(--muted);">Camera + microphone permission will be requested for the real test</p>
       </div>
     </div>
   </div>
@@ -117,6 +122,10 @@
         </div>
       </div>
 
+      <div id="sectionProgressBar" class="card" style="padding:0.65rem 1rem;display:none;">
+        <div style="font-size:0.78rem;color:var(--muted);margin-bottom:0.35rem;">Sections</div>
+        <div id="sectionProgressLabels" style="display:flex;flex-wrap:wrap;gap:0.45rem;font-size:0.82rem;"></div>
+      </div>
       <!-- Flag Warning -->
       <div id="flagWarning" class="alert alert-danger" style="display:none;">
         ⚠️ <strong>Warning!</strong> <span id="flagMsg"></span>
@@ -210,6 +219,19 @@
   <script src="questions.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
   <script>
+    // Prefer same origin (correct on any Render URL). Override via localStorage key qrs_backend_base.
+    const DEFAULT_BACKEND_BASE = (typeof location !== 'undefined' && location.origin && location.protocol !== 'file:')
+      ? location.origin.replace(/\/$/, '')
+      : 'https://qrs-assessment-l7gp.onrender.com';
+    function resolveTestBackendBase() {
+      try {
+        const s = localStorage.getItem('qrs_backend_base');
+        if (s && String(s).trim()) return String(s).trim().replace(/\/$/, '');
+      } catch (e) {}
+      return DEFAULT_BACKEND_BASE;
+    }
+    let BACKEND_BASE = resolveTestBackendBase();
+
     // ========== State ==========
     const FACE_MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
     let faceModelsReady = false;
@@ -492,6 +514,12 @@
         return;
       }
       questions = data.questions;
+      if ((assessment.status === 'in-progress' || assessment.status === 'flagged') && questions.length) {
+        if (typeof assessment.currentQIndex === 'number' && assessment.currentQIndex >= 0 && assessment.currentQIndex < questions.length) {
+          currentQ = assessment.currentQIndex;
+        }
+        if (!assessment.answers) assessment.answers = {};
+      }
       // Use the admin's custom per-candidate duration if set, otherwise the role/level default
       const effectiveDuration = assessment.duration || data.duration;
       timeLeft = effectiveDuration * 60;
@@ -596,6 +624,166 @@
         if (window.innerWidth > 768) return;
         panel.classList.toggle('expanded');
       });
+    }
+
+
+    // ----- Section progress labels -----
+    function updateSectionProgress() {
+      const bar = document.getElementById('sectionProgressBar');
+      const labels = document.getElementById('sectionProgressLabels');
+      if (!bar || !labels || !questions || !questions.length) return;
+      const groups = { mcq: [], coding: [], voice: [] };
+      questions.forEach(function(q, i) {
+        const t = (q.type || 'mcq').toLowerCase();
+        if (t === 'coding') groups.coding.push(i);
+        else if (t === 'voice') groups.voice.push(i);
+        else groups.mcq.push(i);
+      });
+      function answered(idxs) {
+        let n = 0;
+        idxs.forEach(function(i) {
+          const q = questions[i];
+          const a = assessment.answers && assessment.answers[q.id];
+          if (a != null && String(a).trim() !== '') n++;
+        });
+        return n;
+      }
+      const parts = [];
+      [['MCQ', groups.mcq], ['Coding', groups.coding], ['Voice', groups.voice]].forEach(function(pair) {
+        const name = pair[0], idxs = pair[1];
+        if (!idxs.length) return;
+        const done = answered(idxs);
+        const active = idxs.indexOf(currentQ) >= 0;
+        parts.push(
+          '<span style="padding:0.3rem 0.65rem;border-radius:999px;border:1px solid ' + (active ? 'var(--primary)' : '#e2e8f0') + ';' +
+          'background:' + (active ? 'var(--primary-soft,#eef2ff)' : '#f8fafc') + ';font-weight:' + (active ? '700' : '500') + ';">' +
+          name + ' ' + done + '/' + idxs.length + '</span>'
+        );
+      });
+      if (!parts.length) { bar.style.display = 'none'; return; }
+      bar.style.display = 'block';
+      labels.innerHTML = parts.join('');
+    }
+
+    // ----- Practice demo (not scored) -----
+    let practiceTimerId = null;
+    let practiceIdx = 0;
+    const PRACTICE_QUESTIONS = [
+      { id: 'prac1', type: 'mcq', text: 'Practice: What is 2 + 2?', options: ['3', '4', '5', '22'], marks: 0 },
+      { id: 'prac2', type: 'mcq', text: 'Practice: What must stay ON during the real test?', options: ['Camera', 'Music app', 'Second phone', 'VPN only'], marks: 0 }
+    ];
+    function startPracticeDemo() {
+      const pre = document.getElementById('preStart');
+      const prac = document.getElementById('practiceUI');
+      if (pre) pre.style.display = 'none';
+      if (prac) prac.style.display = 'block';
+      practiceIdx = 0;
+      renderPracticeQ();
+      let left = 120;
+      const el = document.getElementById('practiceTimer');
+      if (practiceTimerId) clearInterval(practiceTimerId);
+      practiceTimerId = setInterval(function() {
+        left--;
+        if (el) {
+          const m = Math.floor(left / 60), s = left % 60;
+          el.textContent = String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+        }
+        if (left <= 0) endPractice(false);
+      }, 1000);
+    }
+    function renderPracticeQ() {
+      const q = PRACTICE_QUESTIONS[practiceIdx];
+      const box = document.getElementById('practiceQuestion');
+      if (!q || !box) return;
+      let html = '<div style="font-size:0.8rem;color:var(--muted);">Question ' + (practiceIdx+1) + ' of ' + PRACTICE_QUESTIONS.length + '</div>';
+      html += '<div style="font-weight:600;margin:0.5rem 0 0.75rem;">' + q.text + '</div>';
+      q.options.forEach(function(opt, i) {
+        html += '<label style="display:block;padding:0.7rem 0.9rem;border:1px solid #e2e8f0;border-radius:10px;margin-bottom:0.45rem;cursor:pointer;">' +
+          '<input type="radio" name="prac" value="' + i + '" style="margin-right:0.5rem;">' + opt + '</label>';
+      });
+      box.innerHTML = html;
+      const nb = document.getElementById('practiceNextBtn');
+      if (nb) nb.style.display = practiceIdx < PRACTICE_QUESTIONS.length - 1 ? '' : 'none';
+    }
+    function practiceNext() {
+      if (practiceIdx < PRACTICE_QUESTIONS.length - 1) {
+        practiceIdx++;
+        renderPracticeQ();
+      }
+    }
+    function endPractice(startReal) {
+      if (practiceTimerId) { clearInterval(practiceTimerId); practiceTimerId = null; }
+      const prac = document.getElementById('practiceUI');
+      if (prac) prac.style.display = 'none';
+      if (startReal) startTest();
+      else {
+        const pre = document.getElementById('preStart');
+        if (pre) pre.style.display = 'block';
+      }
+    }
+
+    // ----- Submit checklist -----
+    let pendingSubmitAuto = false;
+    function getUnansweredList() {
+      const miss = [];
+      (questions || []).forEach(function(q, i) {
+        const a = assessment.answers && assessment.answers[q.id];
+        if (a == null || String(a).trim() === '') {
+          miss.push({ index: i, id: q.id, type: q.type || 'mcq', text: (q.text || q.question || '').slice(0, 80) });
+        }
+      });
+      return miss;
+    }
+    function openSubmitConfirm(auto) {
+      pendingSubmitAuto = !!auto;
+      const body = document.getElementById('submitConfirmBody');
+      const miss = getUnansweredList();
+      if (!body) { doSubmitTest(!!auto); return; }
+      if (auto) {
+        body.innerHTML = '<p>Time is up. Your answers will be submitted now.</p>' +
+          (miss.length ? '<p><strong>' + miss.length + '</strong> unanswered.</p>' : '<p>All questions answered.</p>');
+      } else if (miss.length) {
+        body.innerHTML = '<p style="color:#b45309;"><strong>' + miss.length + '</strong> unanswered:</p><ul style="margin:0.4rem 0 0 1.1rem;font-size:0.85rem;">' +
+          miss.slice(0, 8).map(function(m) {
+            return '<li>Q' + (m.index + 1) + ' (' + m.type + ') — ' + String(m.text).replace(/</g,'&lt;') + '</li>';
+          }).join('') +
+          (miss.length > 8 ? '<li>…and ' + (miss.length - 8) + ' more</li>' : '') +
+          '</ul><p style="margin-top:0.6rem;">Submit anyway?</p>';
+      } else {
+        body.innerHTML = '<p>All questions have answers. Submit final result?</p>';
+      }
+      const modal = document.getElementById('submitConfirmModal');
+      if (modal) modal.style.display = 'flex';
+      else doSubmitTest(!!auto);
+    }
+    function closeSubmitConfirm() {
+      const modal = document.getElementById('submitConfirmModal');
+      if (modal) modal.style.display = 'none';
+    }
+    function confirmSubmitNow() {
+      closeSubmitConfirm();
+      doSubmitTest(pendingSubmitAuto);
+    }
+
+    // ----- Fullscreen -----
+    function requestTestFullscreen() {
+      try {
+        const el = document.documentElement;
+        if (el.requestFullscreen) el.requestFullscreen();
+        else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+      } catch (e) {}
+    }
+    function setupFullscreenWatch() {
+      if (window._fsWatchBound) return;
+      window._fsWatchBound = true;
+      const onFs = function() {
+        const fs = document.fullscreenElement || document.webkitFullscreenElement;
+        if (!fs && assessment && (assessment.status === 'in-progress' || assessment.status === 'flagged')) {
+          addFlag('Exited fullscreen mode');
+        }
+      };
+      document.addEventListener('fullscreenchange', onFs);
+      document.addEventListener('webkitfullscreenchange', onFs);
     }
 
     function isMobileDevice() {
@@ -768,21 +956,16 @@
     // change this one URL to your backend's Render URL. It can also be overridden with
     // localStorage key `qrs_backend_base` without editing the file again.
     // Prefer same origin (correct on any Render URL). Override only via localStorage if needed.
-    const DEFAULT_BACKEND_BASE = (typeof location !== 'undefined' && location.origin && location.protocol !== 'file:')
-      ? location.origin.replace(/\/$/, '')
-      : 'https://qrs-assessment-l7gp.onrender.com';
-    function resolveTestBackendBase() {
-      try {
-        const s = localStorage.getItem('qrs_backend_base');
-        if (s && String(s).trim()) return String(s).trim().replace(/\/$/, '');
-      } catch (e) {}
-      return DEFAULT_BACKEND_BASE;
-    }
-    const BACKEND_BASE = resolveTestBackendBase();
+        /* duplicate BACKEND_BASE block removed */
+
+    /* BACKEND_BASE set at top */void 0;
     let backendOverflow = false; // once local storage fills, keep sending new photos straight to backend
 
     function saveAssessment() {
-      if (assessment && (assessment.status === 'in-progress' || assessment.status === 'flagged')) { try { touchActivity(); } catch (e) {} }
+      if (assessment && (assessment.status === 'in-progress' || assessment.status === 'flagged')) {
+        try { assessment.currentQIndex = currentQ; } catch (e) {}
+        try { touchActivity(); } catch (e) {}
+      }
       const list = JSON.parse(lsGet('assessments') || '[]');
       const idx = list.findIndex(a => a.id === assessment.id);
       if (idx === -1) return;
@@ -1213,6 +1396,32 @@
       }
     }
 
+
+    async function captureFlagPhoto(reason) {
+      if (assessment && assessment.storePhotos === false) return;
+      const video = document.getElementById('cameraFeed');
+      if (!video || !video.videoWidth || video.readyState < 2) return;
+      try {
+        const canvas = document.createElement('canvas');
+        const scale = Math.min(1, 960 / video.videoWidth);
+        canvas.width = Math.round(video.videoWidth * scale);
+        canvas.height = Math.round(video.videoHeight * scale);
+        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+        const at = new Date().toISOString();
+        assessment.lastPhoto = dataUrl;
+        assessment.lastPhotoAt = at;
+        if (!assessment.photoHistory) assessment.photoHistory = [];
+        assessment.photoHistory.push({ img: dataUrl, at: at, flag: reason || true });
+        if (assessment.photoHistory.length > 8) assessment.photoHistory = assessment.photoHistory.slice(-8);
+        if (!assessment.photoCount) assessment.photoCount = 0;
+        assessment.photoCount += 1;
+        if (typeof sendPhotoToBackend === 'function') sendPhotoToBackend(dataUrl, at);
+        const cnt = document.getElementById('photoCountHint');
+        if (cnt) cnt.textContent = (assessment.photoCount || 0) + ' photos · last on flag';
+      } catch (e) { console.warn('Flag photo failed', e); }
+    }
+
     function addFlag(reason) {
       if (flags.length >= 3) return;
       // Avoid duplicate rapid flags
@@ -1224,6 +1433,8 @@
         assessment.status = 'flagged';
       }
       saveAssessment();
+      // Extra proctor snapshot when a flag is raised
+      try { captureFlagPhoto(reason); } catch (e) {}
 
       document.getElementById('flagCountText').textContent = flags.length;
       document.getElementById('flagBadge').textContent = flags.length + '/3';
@@ -1302,6 +1513,7 @@
       document.getElementById('qNum').textContent = currentIndex + 1;
       document.getElementById('progressFill').style.width = `${((currentIndex+1)/questions.length)*100}%`;
       renderQuestionDots();
+      try { updateSectionProgress(); } catch (e) {}
 
       document.getElementById('prevBtn').disabled = currentIndex === 0;
       if (currentIndex === questions.length - 1) {
@@ -1384,6 +1596,7 @@
       }
       scheduleRecoverySync();
       renderQuestionDots();
+      try { updateSectionProgress(); } catch (e) {}
     }
 
     // Flags large pastes into a coding answer — a strong signal the answer was copied
@@ -1408,6 +1621,7 @@
       saveAssessment();
       scheduleRecoverySync();
       renderQuestionDots();
+      try { updateSectionProgress(); } catch (e) {}
     }
 
     function nextQuestion() {
@@ -1497,6 +1711,15 @@
     }
 
     function submitTest(auto = false) {
+      // Time-up / forced submit must not wait on the confirmation modal
+      if (auto) {
+        doSubmitTest(true);
+        return;
+      }
+      openSubmitConfirm(false);
+    }
+
+    function doSubmitTest(auto = false) {
       clearInterval(timerInterval);
       if (faceCheckInterval) clearInterval(faceCheckInterval);
       if (photoInterval) clearInterval(photoInterval);
@@ -1838,5 +2061,35 @@
     </div>
   </div>
 
+
+  <div id="submitConfirmModal" style="display:none;position:fixed;inset:0;z-index:10050;background:rgba(15,23,42,0.55);align-items:center;justify-content:center;padding:1rem;">
+    <div class="card" style="max-width:440px;width:100%;margin:0;">
+      <h3 style="margin:0 0 0.5rem;">Submit assessment?</h3>
+      <div id="submitConfirmBody" style="font-size:0.9rem;color:#334155;margin-bottom:1rem;"></div>
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;justify-content:flex-end;">
+        <button type="button" class="btn btn-outline" onclick="closeSubmitConfirm()">Review answers</button>
+        <button type="button" class="btn btn-primary" onclick="confirmSubmitNow()">Submit final</button>
+      </div>
+    </div>
+  </div>
+  <div id="practiceUI" style="display:none;">
+    <div class="container" style="max-width:720px;margin:1.5rem auto;">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
+          <div>
+            <h2 style="margin:0;font-size:1.2rem;">Practice (not scored)</h2>
+            <p style="margin:0.25rem 0 0;font-size:0.85rem;color:var(--muted);">2-minute demo — answers are discarded</p>
+          </div>
+          <div style="font-weight:700;color:var(--primary);" id="practiceTimer">02:00</div>
+        </div>
+        <div id="practiceQuestion" style="margin-top:1rem;"></div>
+        <div style="margin-top:1rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
+          <button type="button" class="btn btn-outline" id="practiceNextBtn" onclick="practiceNext()">Next</button>
+          <button type="button" class="btn btn-primary" onclick="endPractice(true)">End practice & start real test</button>
+          <button type="button" class="btn btn-outline" onclick="endPractice(false)">Back</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

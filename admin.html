@@ -747,6 +747,8 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
           </div>
           <div class="chart-box" style="margin-top:1rem;">
             <h3>Flag summary (all candidates)</h3>
+            <canvas id="avgDurationChart" height="220"></canvas>
+            <h3 style="font-size:0.95rem;margin:1.2rem 0 0.5rem;">Flag heatmap (reasons)</h3>
             <canvas id="flagTypeChart" height="160"></canvas>
           </div>
         </div>
@@ -955,7 +957,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
             • Camera + AI face presence/multi-face monitoring<br>
             • Proctor photos stored at full resolution from start to end of each test<br>
             • Tab switch / minimize / dev-tools / copy-paste detection (3 flags)<br>
-            • Flag reasons logged with timestamp<br>
+            • Avg time to complete + Flag heatmap logged with timestamp<br>
             • Admin can free flagged candidates<br>
             • Coding answer similarity check across candidates<br>
             • CSV export of all results, plus full JSON backup/restore<br>
@@ -1475,8 +1477,10 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       }
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
       document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-      btn.classList.add('active');
-      document.getElementById('tab-' + name).classList.add('active');
+      const activeBtn = btn || document.querySelector('.tab-btn[data-tab="' + name + '"]');
+      if (activeBtn) activeBtn.classList.add('active');
+      const tabEl = document.getElementById('tab-' + name);
+      if (tabEl) tabEl.classList.add('active');
       if (name === 'dashboard') renderDashboard();
       if (name === 'live') renderLiveMonitor();
       if (name === 'results') renderResults();
@@ -1949,7 +1953,42 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
     let flagTypeChartInst = null;
     
     let analyticsStatusChart = null, analyticsRoleChart = null;
+    let avgDurationChartInst = null;
+    function renderAvgDurationChart() {
+      const canvas = document.getElementById('avgDurationChart');
+      if (!canvas || typeof Chart === 'undefined') return;
+      const roles = {};
+      getAssessments().forEach(function(a) {
+        if (a.status !== 'completed' || !a.startedAt || !a.completedAt) return;
+        const ms = new Date(a.completedAt).getTime() - new Date(a.startedAt).getTime();
+        if (!(ms > 0) || ms > 8 * 3600000) return; // ignore nonsense
+        const r = a.role || 'other';
+        if (!roles[r]) roles[r] = [];
+        roles[r].push(ms / 60000);
+      });
+      const labels = Object.keys(roles);
+      const data = labels.map(function(r) {
+        const arr = roles[r];
+        return Math.round((arr.reduce(function(s,v){return s+v;},0) / arr.length) * 10) / 10;
+      });
+      if (avgDurationChartInst) avgDurationChartInst.destroy();
+      avgDurationChartInst = new Chart(canvas.getContext('2d'), {
+        type: 'bar',
+        data: {
+          labels: labels.length ? labels.map(function(r){ return r.replace('_',' '); }) : ['No data'],
+          datasets: [{ label: 'Avg minutes', data: labels.length ? data : [0], backgroundColor: '#0d9488' }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false }, title: { display: true, text: 'Avg time to complete (minutes)' } },
+          scales: { y: { beginAtZero: true, title: { display: true, text: 'Minutes' } } }
+        }
+      });
+    }
     function renderAnalyticsCharts() {
+      try { renderAvgDurationChart(); } catch (e) { console.warn(e); }
+      try { renderFlagTypeChart(); } catch (e) { console.warn(e); }
+
       const list = getAssessments();
       const completed = list.filter(a => a.status === 'completed');
       const flagged = list.filter(a => a.flags && a.flags.length > 0);
@@ -2003,7 +2042,10 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         type: 'bar',
         data: {
           labels: labels.length ? labels : ['No flags yet'],
-          datasets: [{ label: 'Flag count', data: labels.length ? data : [0], backgroundColor: '#f43f5e' }]
+          datasets: [{ label: 'Flag count', data: labels.length ? data : [0], backgroundColor: labels.map(function(_, i) {
+            const colors = ['#f43f5e','#f97316','#eab308','#84cc16','#06b6d4','#8b5cf6','#ec4899','#64748b'];
+            return colors[i % colors.length];
+          }) }]
         },
         options: {
           responsive: true,
@@ -3417,6 +3459,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         '<div class="detail-row"><span>Mobile</span><span>' + (a.mobile || '—') + '</span></div>' +
         '<div class="detail-row"><span>Role / Level</span><span>' + a.role + ' / ' + a.level + '</span></div>' +
         '<div class="detail-row"><span>Mobile support</span><span>' + (a.allowMobile ? '<span class="badge-mobile-ok">📱 Mobile allowed</span>' : '<span class="badge-mobile-no">💻 Desktop only</span>') + '</span></div>' +
+        '<div class="detail-row"><span>IP / device</span><span style="font-size:0.85rem;word-break:break-all;">' + (a.lastSeenIp || a.clientIp || '—') + (a.userAgent ? '<br><small style="color:#64748b;">' + String(a.userAgent).slice(0,100).replace(/</g,'&lt;') + '</small>' : '') + '</span></div>' +
         '<div class="detail-row"><span>Status</span><span>' + statusBadge(a.status, a) + (a.statusNote ? ' — ' + a.statusNote : '') + '</span></div>' +
         '<div class="detail-row"><span>MCQ (auto)</span><strong>' + (a.score != null ? a.score + ' / 100' : 'Not submitted') + (a.mcqCount != null ? ' <small style="color:#64748b;">(' + (a.mcqCorrect||0) + '/' + a.mcqCount + ' correct)</small>' : '') + '</strong></div>' +
         '<div class="detail-row"><span>Voice score</span><strong>' + (a.voiceScore !== undefined && a.voiceScore !== null ? a.voiceScore : 'Not scored') + '</strong></div>' +
