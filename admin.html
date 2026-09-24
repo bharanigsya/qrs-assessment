@@ -321,9 +321,15 @@
       font-size: 0.72rem; font-weight: 700; background: #f1f5f9; color: #475569;
       border: 1px solid #e2e8f0;
     }
+
+    .skip-link { position:absolute;left:-9999px;top:0;z-index:100000;background:#4f46e5;color:#fff;padding:0.65rem 1rem;font-weight:600; }
+    .skip-link:focus { left:0; outline:3px solid #fbbf24; }
+    :focus-visible { outline:3px solid #4f46e5 !important; outline-offset:2px !important; }
+    .sr-only { position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0; }
   </style>
 </head>
 <body>
+  <a class="skip-link" href="#adminApp">Skip to admin content</a>
   <div id="adminOfflineBanner" class="offline-banner" role="status">You&apos;re offline — scores and updates may not sync until connection returns.</div>
 
   <!-- LOGIN -->
@@ -441,6 +447,10 @@
           <div id="needsActionList"><p style="color:#64748b;font-size:0.9rem;">All clear.</p></div>
         </div>
         <div class="kpi-strip" id="kpiStrip"></div>
+        <div class="card" id="activityDigestCard" style="border:1px solid #a5b4fc;background:linear-gradient(135deg,#eef2ff,#f8fafc);margin-bottom:1rem;">
+          <h2 class="card-title" style="margin-bottom:0.5rem;">📈 Last 24 hours</h2>
+          <div id="activityDigest" style="font-size:0.92rem;color:#334155;">Loading…</div>
+        </div>
         <div class="stat-grid" id="statGrid"></div>
         <div class="card" style="border:1px solid #c7d2fe;background:#eef2ff;margin-bottom:1rem;">
           <h2 class="card-title">📅 Today&apos;s schedule</h2>
@@ -571,7 +581,7 @@
           </label>
           <label style="display:flex;align-items:center;gap:0.5rem;margin-top:0.65rem;font-size:0.88rem;font-weight:500;cursor:pointer;">
             <input type="checkbox" id="allowMobile" style="width:auto;">
-            📱 Allow mobile / tablet for this candidate (default: laptop only)
+            📱 Allow candidate to take this test on mobile/tablet (default: laptop only — not for using phone while on laptop)
           </label>
           <small style="display:block;color:var(--muted);margin:0.25rem 0 0 1.6rem;font-size:0.8rem;">If unchecked, phones and tablets are blocked. Enable only when you intentionally allow mobile.</small>
           <label style="display:flex;align-items:center;gap:0.5rem;margin-top:0.65rem;font-size:0.88rem;font-weight:500;cursor:pointer;">
@@ -596,7 +606,7 @@
             <div id="gmailMessageBox" style="display:none;margin-top:1rem;padding:0.9rem 1rem;background:#fff;border:1px solid #c7d2fe;border-radius:12px;">
               <div style="font-weight:700;color:#3730a3;margin-bottom:0.5rem;font-size:0.88rem;">📧 Ready-to-send message</div>
               <div style="font-size:0.8rem;color:#64748b;margin-bottom:0.4rem;">To: <span id="gmailMsgTo" style="color:#0f172a;font-weight:600;"></span></div>
-              <div style="font-size:0.8rem;color:#64748b;margin-bottom:0.3rem;">Subject: <span id="gmailMsgSubject" style="color:#0f172a;"></span></div>
+              <div style="display:none;">Subject: <span id="gmailMsgSubject" style="color:#0f172a;"></span></div>
               <textarea id="gmailMsgBody" readonly style="width:100%;min-height:180px;font-family:inherit;font-size:0.85rem;border:1px solid var(--border);border-radius:10px;padding:0.7rem;background:#f8fafc;color:#0f172a;"></textarea>
               <div style="margin-top:0.6rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
                 <button class="btn btn-primary" onclick="copyGmailMessage()">📋 Copy Message</button>
@@ -2159,8 +2169,8 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         document.getElementById('testLink').textContent = fullUrl;
         const unlockText = scheduledAt ? new Date(scheduledAt).toLocaleString() : 'Available immediately (no schedule lock)';
         const mobileBadge = (document.getElementById('allowMobile') && document.getElementById('allowMobile').checked)
-          ? '<span class="badge-mobile-ok">📱 Mobile allowed</span>'
-          : '<span class="badge-mobile-no">💻 Desktop only</span>';
+          ? '<span class="badge-mobile-ok">📱 Can take test on mobile</span>'
+          : '<span class="badge-mobile-no">💻 Laptop only</span>';
         document.getElementById('linkDetails').innerHTML =
           '<div style="margin-top:0.65rem;padding:0.85rem 1rem;background:#eef2ff;border:1px solid #c7d2fe;border-radius:12px;font-size:0.9rem;line-height:1.55;">' +
           '<div style="font-weight:700;margin-bottom:0.4rem;color:#3730a3;">Link timing</div>' +
@@ -2262,6 +2272,77 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
 
     let statusChart = null, roleChart = null;
 
+
+    function buildProctorSummary(a) {
+      const flags = (a && a.flags) ? a.flags : [];
+      if (!flags.length) {
+        return { text: 'No proctoring flags', html: '<span style="color:#059669;font-weight:600;">No proctoring flags</span>', counts: {} };
+      }
+      const counts = {};
+      flags.forEach(function(f) {
+        let r = String(f.reason || 'Other').trim();
+        // Normalize similar reasons into short buckets for HR
+        const low = r.toLowerCase();
+        if (low.indexOf('tab') >= 0 || low.indexOf('hidden') >= 0 || low.indexOf('switched') >= 0 || low.indexOf('left test') >= 0) r = 'Tab / screen switch';
+        else if (low.indexOf('fullscreen') >= 0) r = 'Exited fullscreen';
+        else if (low.indexOf('no face') >= 0 || low.indexOf('face not') >= 0 || low.indexOf('covered') >= 0) r = 'No face / covered';
+        else if (low.indexOf('multiple face') >= 0 || low.indexOf('multiple faces') >= 0) r = 'Multiple faces';
+        else if (low.indexOf('paste') >= 0 || low.indexOf('copy') >= 0 || low.indexOf('cut') >= 0) r = 'Copy / paste';
+        else if (low.indexOf('focus') >= 0 || low.indexOf('blur') >= 0) r = 'Window lost focus';
+        else if (low.indexOf('devtools') >= 0 || low.indexOf('inspect') >= 0 || low.indexOf('view source') >= 0) r = 'DevTools attempt';
+        else if (low.indexOf('camera') >= 0) r = 'Camera issue';
+        else if (low.indexOf('returned') >= 0) r = 'Returned after away';
+        else r = r.slice(0, 42);
+        counts[r] = (counts[r] || 0) + 1;
+      });
+      const parts = Object.keys(counts).map(function(k) {
+        return k + ' ×' + counts[k];
+      });
+      const text = flags.length + ' flag' + (flags.length === 1 ? '' : 's') + ' · ' + parts.join(' · ');
+      const html = '<strong style="color:#b91c1c;">' + flags.length + ' flag' + (flags.length === 1 ? '' : 's') + '</strong> · ' +
+        parts.map(function(p) { return '<span style="display:inline-block;margin:0.15rem 0.25rem 0.15rem 0;padding:0.2rem 0.5rem;border-radius:999px;background:#fef2f2;border:1px solid #fecaca;font-size:0.82rem;">' + p.replace(/</g,'&lt;') + '</span>'; }).join('');
+      return { text: text, html: html, counts: counts };
+    }
+
+    function renderActivityDigest() {
+      const el = document.getElementById('activityDigest');
+      if (!el) return;
+      const list = getAssessments();
+      const now = Date.now();
+      const day = 24 * 60 * 60 * 1000;
+      function in24(ts) {
+        if (!ts) return false;
+        const t = new Date(ts).getTime();
+        return !isNaN(t) && (now - t) <= day && t <= now + 60000;
+      }
+      let created = 0, completed = 0, flagged = 0, started = 0, missed = 0;
+      list.forEach(function(a) {
+        if (in24(a.createdAt)) created++;
+        if (in24(a.completedAt) || (a.status === 'completed' && in24(a.statusUpdatedAt))) completed++;
+        else if (a.status === 'completed' && in24(a.completedAt)) completed++;
+        if (in24(a.startedAt) && (a.status === 'in-progress' || a.status === 'flagged' || a.status === 'completed')) started++;
+        if ((a.flags || []).some(function(f) { return in24(f.time || f.at); })) flagged++;
+        if (a.status === 'missed' && in24(a.statusUpdatedAt || a.expiresAt)) missed++;
+      });
+      // Fix completed count: prefer completedAt in last 24h
+      completed = list.filter(function(a) { return a.status === 'completed' && in24(a.completedAt); }).length;
+      started = list.filter(function(a) { return in24(a.startedAt); }).length;
+      flagged = list.filter(function(a) {
+        return (a.flags || []).some(function(f) { return in24(f.time || f.at); });
+      }).length;
+      missed = list.filter(function(a) { return a.status === 'missed' && in24(a.statusUpdatedAt || a.expiresAt); }).length;
+
+      el.innerHTML =
+        '<div style="display:flex;flex-wrap:wrap;gap:0.55rem;">' +
+        '<span style="padding:0.4rem 0.75rem;border-radius:10px;background:#fff;border:1px solid #c7d2fe;"><strong>' + created + '</strong> created</span>' +
+        '<span style="padding:0.4rem 0.75rem;border-radius:10px;background:#fff;border:1px solid #bbf7d0;"><strong>' + started + '</strong> started</span>' +
+        '<span style="padding:0.4rem 0.75rem;border-radius:10px;background:#fff;border:1px solid #86efac;"><strong>' + completed + '</strong> completed</span>' +
+        '<span style="padding:0.4rem 0.75rem;border-radius:10px;background:#fff;border:1px solid #fecaca;"><strong>' + flagged + '</strong> flagged</span>' +
+        '<span style="padding:0.4rem 0.75rem;border-radius:10px;background:#fff;border:1px solid #fdba74;"><strong>' + missed + '</strong> missed</span>' +
+        '</div>' +
+        '<p style="margin:0.55rem 0 0;font-size:0.8rem;color:#64748b;">Counts from the last 24 hours (server times when available).</p>';
+    }
+
     function renderDashboard() {
       const list = getAssessments();
       const completed = list.filter(a => a.status === 'completed');
@@ -2272,6 +2353,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       const avgScore = scores.length ? Math.round(scores.reduce((s,v) => s+v, 0) / scores.length) : 0;
 
       if (typeof renderKpiStrip === 'function') renderKpiStrip(list);
+      try { renderActivityDigest(); } catch (e) { console.warn(e); }
 
       document.getElementById('statGrid').innerHTML =
         '<div class="stat-card teal"><div class="label">Total</div><div class="value">' + list.length + '</div></div>' +
@@ -2466,9 +2548,13 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
 
     function copyGmailMessage() {
       const ta = document.getElementById('gmailMsgBody');
-      const subject = document.getElementById('gmailMsgSubject').textContent;
-      const fullText = 'Subject: ' + subject + '\n\n' + ta.value;
-      navigator.clipboard.writeText(fullText).then(() => alert('Message copied! Paste it into Gmail (or any email app) and hit Send.'));
+      if (!ta) return;
+      // Body only — no "Subject:" line (paste into WhatsApp / email body as-is)
+      navigator.clipboard.writeText(ta.value).then(() => alert('Message body copied! Paste into WhatsApp or your email.')).catch(() => {
+        ta.select();
+        document.execCommand('copy');
+        alert('Message body copied!');
+      });
     }
 
     function emailLink() {
@@ -3066,7 +3152,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         '<td>' + a.role + '</td><td><span class="badge badge-' + a.level + '">' + a.level + '</span></td>' +
         '<td>' + statusBadge(a.status, a) + (a.status === 'in-progress' ? ' <span class="badge" style="background:#d1fae5;color:#065f46;">● attending</span>' : '') + (a.lastActivityAt ? '<br><small style="color:#059669;">Last active: ' + new Date(a.lastActivityAt).toLocaleString() + '</small>' : (a.startedAt && a.status === 'in-progress' ? '<br><small style="color:#94a3b8;">Started: ' + new Date(a.startedAt).toLocaleString() + '</small>' : '')) + (a.status === 'completed' ? ' <span class="badge" style="background:#e0e7ff;color:#3730a3;">finished</span>' : '') + (a.statusNote ? '<br><small style="color:#9a3412;">' + a.statusNote + '</small>' : '') + (a.status === 'expired' && a.expiresAt ? '<br><small style="color:#9d174d;">Exp: ' + new Date(a.expiresAt).toLocaleString() + '</small>' : '') + (a.status === 'missed' ? '<br><small style="color:#c2410c;">Did not attend</small>' : '') + '</td><td>' + formatScoreCell(a) + '</td>' +
         '<td>' + resultBadge(a) + '</td>' +
-        '<td>' + (a.flags && a.flags.length ? '<span class="flag-count">' + a.flags.length + ' 🚩</span>' : '0') + '</td>' +
+        '<td title="' + (typeof buildProctorSummary === 'function' ? buildProctorSummary(a).text.replace(/"/g,'') : '') + '">' + (a.flags && a.flags.length ? '<span class="flag-count">' + a.flags.length + ' 🚩</span>' : '0') + '</td>' +
         '<td><select style="font-size:0.75rem;padding:0.2rem;max-width:100px;" onchange="setCandidateTag(\'' + a.id + '\', this.value)">' +
           '<option value=""' + (!a.tag ? ' selected' : '') + '>—</option>' +
           '<option value="Selected"' + (a.tag==='Selected' ? ' selected' : '') + '>Selected</option>' +
@@ -3458,7 +3544,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         '<div class="detail-row"><span>Email</span><span>' + a.email + '</span></div>' +
         '<div class="detail-row"><span>Mobile</span><span>' + (a.mobile || '—') + '</span></div>' +
         '<div class="detail-row"><span>Role / Level</span><span>' + a.role + ' / ' + a.level + '</span></div>' +
-        '<div class="detail-row"><span>Mobile support</span><span>' + (a.allowMobile ? '<span class="badge-mobile-ok">📱 Mobile allowed</span>' : '<span class="badge-mobile-no">💻 Desktop only</span>') + '</span></div>' +
+        '<div class="detail-row"><span>Take test on</span><span>' + (a.allowMobile ? '<span class="badge-mobile-ok">📱 Mobile or laptop</span>' : '<span class="badge-mobile-no">💻 Laptop only</span>') + '</span></div>' +
         '<div class="detail-row"><span>IP / device</span><span style="font-size:0.85rem;word-break:break-all;">' + (a.lastSeenIp || a.clientIp || '—') + (a.userAgent ? '<br><small style="color:#64748b;">' + String(a.userAgent).slice(0,100).replace(/</g,'&lt;') + '</small>' : '') + '</span></div>' +
         '<div class="detail-row"><span>Status</span><span>' + statusBadge(a.status, a) + (a.statusNote ? ' — ' + a.statusNote : '') + '</span></div>' +
         '<div class="detail-row"><span>MCQ (auto)</span><strong>' + (a.score != null ? a.score + ' / 100' : 'Not submitted') + (a.mcqCount != null ? ' <small style="color:#64748b;">(' + (a.mcqCorrect||0) + '/' + a.mcqCount + ' correct)</small>' : '') + '</strong></div>' +
@@ -3477,6 +3563,9 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         '<div class="detail-row"><span>Started</span><span>' + (a.startedAt ? new Date(a.startedAt).toLocaleString() : '—') + '</span></div>' +
         '<div class="detail-row"><span>Completed</span><span>' + (a.completedAt ? new Date(a.completedAt).toLocaleString() : '—') + '</span></div>' +
         '<div class="detail-row"><span>Flags</span><span>' + (a.flags ? a.flags.length : 0) + '</span></div>' +
+        '<div style="margin:0.75rem 0;padding:0.75rem 0.9rem;border-radius:12px;border:1px solid ' + ((a.flags && a.flags.length) ? '#fecaca' : '#bbf7d0') + ';background:' + ((a.flags && a.flags.length) ? '#fef2f2' : '#f0fdf4') + ';">' +
+        '<div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#64748b;margin-bottom:0.35rem;">Proctor summary</div>' +
+        '<div style="font-size:0.9rem;line-height:1.45;">' + (typeof buildProctorSummary === 'function' ? buildProctorSummary(a).html : ((a.flags && a.flags.length) ? a.flags.length + ' flags' : 'No flags')) + '</div></div>' +
         '<div class="detail-row"><span>Extra time</span><span>' + (a.extraMinutes || 0) + ' min</span></div>';
 
       // Manual voice scoring + feedback in one panel
@@ -3661,7 +3750,7 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
             '<div class="alert alert-success">' +
               '<strong>New link generated' + (synced ? '' : ' (saved locally — server sync failed)') + ' — link copied to clipboard.</strong>' +
               '<div style="margin:0.5rem 0;word-break:break-all;"><a href="' + fullUrl + '" target="_blank" style="color:#4f46e5;">' + fullUrl + '</a></div>' +
-              '<div style="font-size:0.82rem;color:#475569;">Unlocks: ' + unlockText + ' · Expires: ' + new Date(a.expiresAt).toLocaleString() + ' · Valid for ' + (a.linkValidityHours || 24) + ' hour(s) · ' + (a.allowMobile ? '📱 Mobile allowed' : '💻 Desktop only') + '</div>' +
+              '<div style="font-size:0.82rem;color:#475569;">Unlocks: ' + unlockText + ' · Expires: ' + new Date(a.expiresAt).toLocaleString() + ' · Valid for ' + (a.linkValidityHours || 24) + ' hour(s) · ' + (a.allowMobile ? '📱 Mobile or laptop OK' : '💻 Laptop only') + '</div>' +
               '<div style="margin-top:0.6rem;display:flex;gap:0.5rem;flex-wrap:wrap;">' +
                 '<button class="btn btn-success" style="padding:0.35rem 0.75rem;font-size:0.85rem;" onclick="navigator.clipboard.writeText(' + JSON.stringify(fullUrl) + ').then(()=>alert(\'Link copied!\'))">Copy Link</button>' +
               '</div>' +
@@ -3702,9 +3791,10 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
     function copyResendMessage(id) {
       const ta = document.getElementById('resendMsgBody-' + id);
       if (!ta) return;
-      const subject = window['resendSubject_' + id] || '';
-      navigator.clipboard.writeText('Subject: ' + subject + '\n\n' + ta.value)
-        .then(() => alert('Message copied! Paste it into WhatsApp, email, or anywhere else.'));
+      // Body only — no Subject line
+      navigator.clipboard.writeText(ta.value)
+        .then(() => alert('Message body copied! Paste into WhatsApp, email, or anywhere else.'))
+        .catch(() => { ta.select(); document.execCommand('copy'); alert('Message body copied!'); });
     }
 
     // ========== Full-screen Proctor Photo Viewer ==========

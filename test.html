@@ -13,9 +13,74 @@
     .char-count.ok { color: var(--success); }
     .char-count.bad { color: var(--danger); }
     .face-status { font-size: 0.8rem; margin-top: 0.3rem; }
+
+/* Accessibility */
+.skip-link {
+  position: absolute; left: -9999px; top: 0; z-index: 100000;
+  background: #4f46e5; color: #fff; padding: 0.65rem 1rem; font-weight: 600;
+  border-radius: 0 0 8px 0;
+}
+.skip-link:focus { left: 0; outline: 3px solid #fbbf24; outline-offset: 2px; }
+:focus-visible {
+  outline: 3px solid #4f46e5 !important;
+  outline-offset: 2px !important;
+}
+button:focus:not(:focus-visible),
+a:focus:not(:focus-visible) { outline: none; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+}
+body.a11y-large-text { font-size: 112.5%; }
+body.a11y-large-text .timer { font-size: 1.85rem !important; }
+body.a11y-large-text .question-card { font-size: 1.08rem; }
+body.a11y-high-contrast {
+  --primary: #1d4ed8;
+  --text: #000;
+  --muted: #333;
+  --border: #000;
+  background: #fff;
+}
+body.a11y-high-contrast .card,
+body.a11y-high-contrast .proctor-panel {
+  border: 2px solid #000 !important;
+  box-shadow: none !important;
+}
+body.a11y-high-contrast .btn-primary { background: #1d4ed8; border: 2px solid #000; }
+body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
+.a11y-toolbar {
+  display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center;
+  padding: 0.35rem 0; font-size: 0.8rem;
+}
+.a11y-toolbar button {
+  border: 1px solid #cbd5e1; background: #fff; border-radius: 8px;
+  padding: 0.3rem 0.55rem; cursor: pointer; font-size: 0.78rem; font-weight: 600;
+}
+.a11y-toolbar button[aria-pressed="true"] {
+  background: #eef2ff; border-color: #4f46e5; color: #3730a3;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+.mcq-option {
+  display: flex; align-items: flex-start; gap: 0.6rem;
+  padding: 0.75rem 0.9rem; border: 1.5px solid #e2e8f0; border-radius: 10px;
+  margin-bottom: 0.5rem; cursor: pointer;
+}
+.mcq-option:hover, .mcq-option:focus-within {
+  border-color: #4f46e5; background: #f8fafc;
+}
+.mcq-option input { margin-top: 0.2rem; width: 1.1rem; height: 1.1rem; flex-shrink: 0; }
+
   </style>
 </head>
 <body>
+  <a class="skip-link" id="skipToMain" href="#mainContent">Skip to main content</a>
   <div id="offlineBanner" class="offline-banner" role="status">You&apos;re offline — scores and photos may not sync until connection returns.</div>
   <div id="portraitLock" class="portrait-lock" aria-live="polite">
     <div style="font-size:2.5rem;">📱</div>
@@ -29,17 +94,25 @@
         <img src="qrs-logo.png" alt="QRS" style="height:32px;width:auto;background:#fff;border-radius:6px;padding:3px 6px;margin-right:8px;">
         Proctored Assessment
       </div>
-      <div id="headerInfo" style="font-size:0.9rem;"></div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:0.25rem;">
+        <div id="headerInfo" style="font-size:0.9rem;"></div>
+        <div class="a11y-toolbar" id="a11yToolbar" role="toolbar" aria-label="Accessibility options">
+          <button type="button" id="a11yTextBtn" aria-pressed="false" title="Larger text" onclick="toggleA11yLargeText()">A+ Text</button>
+          <button type="button" id="a11yContrastBtn" aria-pressed="false" title="High contrast" onclick="toggleA11yContrast()">Contrast</button>
+          <button type="button" id="a11yHelpBtn" title="Keyboard help" onclick="showA11yHelp()">Keys</button>
+        </div>
+      </div>
     </div>
   </header>
 
   <!-- Pre-start screen -->
+  <main id="mainContent">
   <div class="container" id="preStart" style="margin-top:2rem; display:none;">
     <div class="card" style="max-width:640px; margin:0 auto;">
       <div style="text-align:center;margin-bottom:1.2rem;">
         <img src="qrs-logo.png" alt="QRS" style="height:44px;width:auto;background:#fff;border-radius:8px;padding:4px 8px;">
-        <h2 style="margin:0.9rem 0 0.25rem;font-size:1.45rem;">Welcome — QRS Assessment</h2>
-        <p style="color:var(--muted);font-size:0.92rem;margin:0;">Please review the details below before starting</p>
+        <h2 id="welcomeGreeting" style="margin:0.9rem 0 0.25rem;font-size:1.45rem;">Welcome — QRS Assessment</h2>
+        <p id="welcomeSubline" style="color:var(--muted);font-size:0.92rem;margin:0;">Please review the details below before starting</p>
       </div>
       <div id="preInfo"></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin:1.1rem 0;">
@@ -71,10 +144,10 @@
         </ul>
       </div>
       <div id="mobileBlock" class="alert alert-danger" style="display:none; text-align:left;">
-        <strong>Desktop or laptop required.</strong> Mobile/tablet is not enabled for this assessment link. Please use a computer with a webcam, or ask the recruiter to enable mobile support.
+        <strong>Laptop required for this link.</strong> This assessment is set for computer only. Open the same link on a laptop/desktop with a webcam, or ask the recruiter to allow mobile for your test.
       </div>
       <div style="text-align:center;">
-        <button class="btn btn-primary" id="startBtn" onclick="startTest()" style="padding:0.95rem 2.1rem; font-size:1.08rem;border-radius:12px;">
+        <button class="btn btn-primary" id="startBtn" onclick="startTest()" aria-describedby="welcomeSubline" style="padding:0.95rem 2.1rem; font-size:1.08rem;border-radius:12px;">
           🎥 Enable Camera & Start Test
         </button>
         <div style="margin-top:0.75rem;">
@@ -90,12 +163,12 @@
   <!-- Main Test UI -->
   <div id="testUI" style="display:none;">
     <!-- Proctor Panel -->
-    <div class="proctor-panel" id="proctorPanel">
+    <div class="proctor-panel" id="proctorPanel" role="region" aria-label="Live proctoring camera">
       <div class="proctor-header">
         <span>🎥 Live Proctoring</span>
-        <span id="flagBadge" class="flag-count">0/3</span>
+        <span id="flagBadge" class="flag-count" aria-label="Flags used">0/3</span>
       </div>
-      <video id="cameraFeed" autoplay muted playsinline></video>
+      <video id="cameraFeed" autoplay muted playsinline aria-label="Your camera preview for proctoring"></video>
       <canvas id="faceCanvas" style="display:none;"></canvas>
       <div class="proctor-stats">
         <div>Status: <span id="proctorStatus" style="color:var(--success);">● Active</span></div>
@@ -111,7 +184,7 @@
       <div class="card sticky-timer-bar" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
         <div>
           <div style="font-size:0.85rem; color:var(--muted);">Time Remaining</div>
-          <div class="timer" id="timer">00:00</div>
+          <div class="timer" id="timer" role="timer" aria-live="off" aria-atomic="true">00:00</div>
         </div>
         <div style="text-align:right;flex:1;min-width:200px;">
           <div style="font-size:0.85rem; color:var(--muted);">Question <span id="qNum">1</span> of <span id="qTotal">0</span></div>
@@ -127,9 +200,10 @@
         <div id="sectionProgressLabels" style="display:flex;flex-wrap:wrap;gap:0.45rem;font-size:0.82rem;"></div>
       </div>
       <!-- Flag Warning -->
-      <div id="flagWarning" class="alert alert-danger" style="display:none;">
+      <div id="flagWarning" class="alert alert-danger" style="display:none;" role="alert" aria-live="assertive">
         ⚠️ <strong>Warning!</strong> <span id="flagMsg"></span>
       </div>
+      <div id="a11yLive" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 
       <!-- Question Area -->
       <div class="card question-card" id="questionArea">
@@ -137,10 +211,10 @@
       </div>
 
       <!-- Navigation -->
-      <div class="nav-buttons">
-        <button class="btn btn-outline" id="prevBtn" onclick="prevQuestion()" disabled>← Previous</button>
-        <button class="btn btn-primary" id="nextBtn" onclick="nextQuestion()">Next →</button>
-        <button class="btn btn-success" id="submitBtn" onclick="confirmSubmit()" style="display:none;">Submit Assessment</button>
+      <div class="nav-buttons" role="group" aria-label="Question navigation">
+        <button class="btn btn-outline" id="prevBtn" onclick="prevQuestion()" disabled aria-label="Previous question">← Previous</button>
+        <button class="btn btn-primary" id="nextBtn" onclick="nextQuestion()" aria-label="Next question">Next →</button>
+        <button class="btn btn-success" id="submitBtn" onclick="confirmSubmit()" style="display:none;" aria-label="Submit assessment">Submit Assessment</button>
       </div>
     </div>
   </div>
@@ -158,12 +232,17 @@
         <p style="margin:0;color:#64748b;font-size:0.85rem;">If you experienced a technical issue, please use <strong>Chat support</strong> (bottom right) or write a short note below.</p>
       </div>
 
+      <div id="motivationQuoteBox" style="text-align:left;background:linear-gradient(135deg,#eef2ff,#f0fdf4);border:1px solid #c7d2fe;border-radius:12px;padding:1rem 1.15rem;margin:0 0 1rem;">
+        <div style="font-size:0.75rem;font-weight:700;color:#4f46e5;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.35rem;">A little motivation</div>
+        <p id="motivationQuote" style="margin:0;font-size:0.98rem;line-height:1.55;color:#1e293b;font-style:italic;">"Believe you can and you're halfway there."</p>
+      </div>
+
       <div id="feedbackBox" style="text-align:left; background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:1rem 1.1rem;">
         <label for="candidateFeedback" style="font-weight:600; font-size:0.95rem; display:block; margin-bottom:0.4rem;">
-          Any final note for the recruitment team? <span style="color:#64748b;font-weight:500;">(optional)</span>
+          What&apos;s on your mind? <span style="color:#64748b;font-weight:500;">(optional)</span>
         </label>
-        <p style="font-size:0.82rem; color:#64748b; margin:0 0 0.55rem;">Technical issues, interest in the role, or anything else you want us to know.</p>
-        <textarea id="candidateFeedback" maxlength="500" placeholder="Write a short note (max 500 characters)..."
+        <p style="font-size:0.82rem; color:#64748b; margin:0 0 0.55rem;">You may write a short message here for HR to view — feedback on the test, interest in the role, or anything you&apos;d like the team to know.</p>
+        <textarea id="candidateFeedback" maxlength="500" placeholder="What's on your mind? HR can read this…"
           style="width:100%; min-height:100px; border:1.5px solid #e2e8f0; border-radius:10px; padding:0.7rem 0.85rem; font-family:inherit; font-size:0.92rem; resize:vertical;"></textarea>
         <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.55rem; gap:0.6rem; flex-wrap:wrap;">
           <small id="feedbackCount" style="color:#64748b;">0 / 500</small>
@@ -442,6 +521,7 @@
       if (assessment.status === 'completed') {
         document.getElementById('completedUI').style.display = 'block';
         showHelpFab(true);
+        try { showMotivationQuote(); } catch (e) {}
         document.getElementById('scoreDisplay').textContent = `Score: ${assessment.score != null ? assessment.score : '—'} / 100`;
         if (assessment.candidateFeedback) {
           const box = document.getElementById('feedbackBox');
@@ -531,6 +611,7 @@
       }
 
       document.getElementById('preStart').style.display = 'block';
+      try { applyWelcomeGreeting(); } catch (e) {}
       showHelpFab(true);
       document.getElementById('preInfo').innerHTML = `
         <div style="text-align:center;padding:0.5rem 0 0.25rem;">
@@ -567,7 +648,7 @@
         if (mb) {
           mb.className = 'alert alert-info';
           mb.style.display = 'block';
-          mb.innerHTML = '<strong>Mobile allowed for this assessment.</strong> Keep the camera facing you, stay in a quiet well-lit place, and do not switch apps during the test.';
+          mb.innerHTML = '<strong>You may take this test on mobile.</strong> Hold the phone upright, keep the front camera on your face, stay in a quiet well-lit place, and do not switch apps during the test.';
         }
       }
     }
@@ -786,6 +867,117 @@
       document.addEventListener('webkitfullscreenchange', onFs);
     }
 
+
+    function timeOfDayGreeting(name) {
+      const h = new Date().getHours();
+      let part = 'Hello';
+      if (h >= 5 && h < 12) part = 'Good morning';
+      else if (h >= 12 && h < 17) part = 'Good afternoon';
+      else if (h >= 17 && h < 22) part = 'Good evening';
+      else part = 'Hello';
+      const n = (name || '').trim();
+      return n ? (part + ', ' + n.split(' ')[0] + '!') : (part + '!');
+    }
+
+    function applyWelcomeGreeting() {
+      const el = document.getElementById('welcomeGreeting');
+      const sub = document.getElementById('welcomeSubline');
+      if (!el) return;
+      const name = assessment && assessment.name ? assessment.name : '';
+      el.textContent = timeOfDayGreeting(name);
+      if (sub) {
+        sub.textContent = 'Welcome to your QRS assessment — review the details below, then start when you are ready. You have got this.';
+      }
+    }
+
+    const MOTIVATION_QUOTES = [
+      '"Believe you can and you\'re halfway there." — Theodore Roosevelt',
+      '"The future depends on what you do today." — Mahatma Gandhi',
+      '"Success is the sum of small efforts, repeated day in and day out." — Robert Collier',
+      '"Your limitation—it\'s only your imagination."',
+      '"Dream big. Start small. Act now."',
+      '"Opportunities don\'t happen. You create them." — Chris Grosser',
+      '"It always seems impossible until it\'s done." — Nelson Mandela',
+      '"Do what you can, with what you have, where you are." — Theodore Roosevelt',
+      '"Hard work beats talent when talent doesn\'t work hard."',
+      '"Every expert was once a beginner. Keep going."'
+    ];
+    function showMotivationQuote() {
+      const el = document.getElementById('motivationQuote');
+      if (!el) return;
+      const q = MOTIVATION_QUOTES[Math.floor(Math.random() * MOTIVATION_QUOTES.length)];
+      el.textContent = q;
+    }
+
+
+    function announceA11y(msg) {
+      const el = document.getElementById('a11yLive');
+      if (!el) return;
+      el.textContent = '';
+      setTimeout(function() { el.textContent = msg; }, 50);
+    }
+    function toggleA11yLargeText() {
+      const on = document.body.classList.toggle('a11y-large-text');
+      const btn = document.getElementById('a11yTextBtn');
+      if (btn) btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      try { localStorage.setItem('qrs_a11y_large', on ? '1' : '0'); } catch (e) {}
+      announceA11y(on ? 'Larger text on' : 'Larger text off');
+    }
+    function toggleA11yContrast() {
+      const on = document.body.classList.toggle('a11y-high-contrast');
+      const btn = document.getElementById('a11yContrastBtn');
+      if (btn) btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      try { localStorage.setItem('qrs_a11y_contrast', on ? '1' : '0'); } catch (e) {}
+      announceA11y(on ? 'High contrast on' : 'High contrast off');
+    }
+    function showA11yHelp() {
+      alert(
+        'Keyboard tips\\n\\n' +
+        '• Tab / Shift+Tab — move between controls\\n' +
+        '• Enter / Space — activate buttons\\n' +
+        '• Alt+N — next question (during test)\\n' +
+        '• Alt+P — previous question (during test)\\n' +
+        '• Esc — close support chat if open\\n\\n' +
+        'Use A+ for larger text and Contrast for higher contrast.'
+      );
+    }
+    function applySavedA11y() {
+      try {
+        if (localStorage.getItem('qrs_a11y_large') === '1') {
+          document.body.classList.add('a11y-large-text');
+          const btn = document.getElementById('a11yTextBtn');
+          if (btn) btn.setAttribute('aria-pressed', 'true');
+        }
+        if (localStorage.getItem('qrs_a11y_contrast') === '1') {
+          document.body.classList.add('a11y-high-contrast');
+          const btn = document.getElementById('a11yContrastBtn');
+          if (btn) btn.setAttribute('aria-pressed', 'true');
+        }
+      } catch (e) {}
+    }
+    document.addEventListener('DOMContentLoaded', applySavedA11y);
+    setTimeout(applySavedA11y, 100);
+
+    document.addEventListener('keydown', function(e) {
+      const testUI = document.getElementById('testUI');
+      const testing = testUI && testUI.style.display !== 'none';
+      if (!testing) return;
+      if (e.altKey && (e.key === 'n' || e.key === 'N')) {
+        e.preventDefault();
+        const nb = document.getElementById('nextBtn');
+        if (nb && nb.style.display !== 'none' && !nb.disabled) nextQuestion();
+      }
+      if (e.altKey && (e.key === 'p' || e.key === 'P')) {
+        e.preventDefault();
+        const pb = document.getElementById('prevBtn');
+        if (pb && !pb.disabled) prevQuestion();
+      }
+      if (e.key === 'Escape') {
+        const panel = document.getElementById('helpPanel');
+        if (panel && panel.style.display !== 'none') toggleHelpPanel();
+      }
+    });
+
     function isMobileDevice() {
       const uaMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(navigator.userAgent);
       const touchSmallScreen = ('ontouchstart' in window) && Math.min(window.innerWidth, window.innerHeight) < 820;
@@ -808,7 +1000,7 @@
               height: { ideal: 1080, min: 540 },
               frameRate: { ideal: 24, max: 30 }
             }
-          : { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } };
+          : { facingMode: 'user', width: { ideal: 1280, min: 640 }, height: { ideal: 720, min: 480 } };
         stream = await navigator.mediaDevices.getUserMedia({
           video: videoConstraints,
           audio: true
@@ -877,7 +1069,7 @@
       document.getElementById('testUI').style.display = 'block';
       showHelpFab(true);
 
-      document.getElementById('headerInfo').innerHTML = `${assessment.name} • ${assessment.role} • <span class="badge badge-${assessment.level}">${assessment.level}</span>`;
+      document.getElementById('headerInfo').innerHTML = `${timeOfDayGreeting(assessment.name)} · ${assessment.role} · <span class="badge badge-${assessment.level}">${assessment.level}</span>`;
       document.getElementById('qTotal').textContent = questions.length;
 
       setupProctoring();
@@ -1291,8 +1483,8 @@
       const canvas = document.createElement('canvas');
       // 1 photo every 1 minute after a reliable first capture
       const onMobile = !!(assessment && assessment.allowMobile && isMobileDevice());
-      const MAX_CAPTURE_WIDTH = onMobile ? 1600 : 640;
-      const JPEG_QUALITY = onMobile ? 0.94 : 0.78;
+      const MAX_CAPTURE_WIDTH = onMobile ? 1920 : 1280;
+      const JPEG_QUALITY = onMobile ? 0.95 : 0.92;
       const LOCAL_HISTORY_LIMIT = onMobile ? 4 : 6;
       let firstOk = false;
 
@@ -1319,6 +1511,19 @@
           ctx.imageSmoothingEnabled = true;
           ctx.imageSmoothingQuality = 'high';
           ctx.drawImage(video, 0, 0, w, h);
+          // Mild contrast boost for clearer faces in admin review
+          try {
+            const img = ctx.getImageData(0, 0, w, h);
+            const d = img.data;
+            const contrast = 1.1;
+            const intercept = 128 * (1 - contrast);
+            for (let i = 0; i < d.length; i += 4) {
+              d[i] = Math.min(255, Math.max(0, d[i] * contrast + intercept));
+              d[i+1] = Math.min(255, Math.max(0, d[i+1] * contrast + intercept));
+              d[i+2] = Math.min(255, Math.max(0, d[i+2] * contrast + intercept));
+            }
+            ctx.putImageData(img, 0, 0);
+          } catch (e) {}
           const dataUrl = canvas.toDataURL('image/jpeg', JPEG_QUALITY);
           if (!dataUrl || dataUrl.length < 1000) {
             console.warn('Photo capture: empty/tiny frame');
@@ -1403,11 +1608,26 @@
       if (!video || !video.videoWidth || video.readyState < 2) return;
       try {
         const canvas = document.createElement('canvas');
-        const scale = Math.min(1, 960 / video.videoWidth);
+        const scale = Math.min(1, 1280 / video.videoWidth);
         canvas.width = Math.round(video.videoWidth * scale);
         canvas.height = Math.round(video.videoHeight * scale);
-        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+        const ctxF = canvas.getContext('2d');
+        ctxF.imageSmoothingEnabled = true;
+        ctxF.imageSmoothingQuality = 'high';
+        ctxF.drawImage(video, 0, 0, canvas.width, canvas.height);
+        try {
+          const img = ctxF.getImageData(0, 0, canvas.width, canvas.height);
+          const d = img.data;
+          const contrast = 1.12;
+          const intercept = 128 * (1 - contrast);
+          for (let i = 0; i < d.length; i += 4) {
+            d[i] = Math.min(255, Math.max(0, d[i] * contrast + intercept));
+            d[i+1] = Math.min(255, Math.max(0, d[i+1] * contrast + intercept));
+            d[i+2] = Math.min(255, Math.max(0, d[i+2] * contrast + intercept));
+          }
+          ctxF.putImageData(img, 0, 0);
+        } catch (e) {}
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.93);
         const at = new Date().toISOString();
         assessment.lastPhoto = dataUrl;
         assessment.lastPhotoAt = at;
@@ -1437,6 +1657,7 @@
       try { captureFlagPhoto(reason); } catch (e) {}
 
       document.getElementById('flagCountText').textContent = flags.length;
+      try { announceA11y('Proctoring warning: ' + reason + '. Flags ' + flags.length + ' of 3'); } catch (e) {}
       document.getElementById('flagBadge').textContent = flags.length + '/3';
       // Candidate sees only a generic warning (detailed reason stored for admin)
       document.getElementById('lastFlag').textContent = 'A proctoring warning was recorded.';
@@ -1488,7 +1709,7 @@
         let bg = answered ? '#10b981' : '#e2e8f0';
         let border = current ? '2px solid #4f46e5' : '2px solid transparent';
         let title = 'Q' + (i+1) + (answered ? ' (answered)' : ' (not answered)');
-        return '<button type="button" title="' + title + '" onclick="goToQuestion(' + i + ')" style="width:22px;height:22px;border-radius:50%;border:' + border + ';background:' + bg + ';cursor:pointer;padding:0;"></button>';
+        return '<button type="button" title="' + title + '" aria-label="' + title + (current ? ' — current' : '') + '" aria-current="' + (current ? 'true' : 'false') + '" onclick="goToQuestion(' + i + ')" style="width:22px;height:22px;border-radius:50%;border:' + border + ';background:' + bg + ';cursor:pointer;padding:0;"></button>';
       }).join('');
     }
 
@@ -1537,40 +1758,54 @@
 
       if (q.type === 'mcq') {
         const selected = answers[q.id];
+        html += `<fieldset style="border:none;margin:0;padding:0;">
+          <legend class="sr-only">Choose one option for question ${currentIndex + 1}</legend>`;
         html += q.options.map((opt, i) => `
-          <label class="option ${selected === i ? 'selected' : ''}">
-            <input type="radio" name="q_${q.id}" value="${i}" ${selected === i ? 'checked' : ''} onchange="saveAnswer('${q.id}', ${i})">
+          <label class="option mcq-option ${selected === i ? 'selected' : ''}" for="opt_${q.id}_${i}">
+            <input type="radio" id="opt_${q.id}_${i}" name="q_${q.id}" value="${i}" ${selected === i ? 'checked' : ''} onchange="saveAnswer('${q.id}', ${i})" aria-label="Option ${i + 1}: ${String(opt).replace(/"/g, '&quot;')}">
             <span>${opt}</span>
           </label>
         `).join('');
+        html += `</fieldset>`;
       } else if (q.type === 'coding') {
         const val = answers[q.id] || '';
         const minLen = q.minLength || 50;
         const len = val.length;
         const ok = len >= minLen;
         html += `
-          <p style="font-size:0.85rem; color:var(--muted); margin-bottom:0.5rem;">Language / Format: <strong>${q.language || 'text'}</strong> • Minimum ${minLen} characters required</p>
-          <textarea class="code-area" id="code_${q.id}" placeholder="Write your complete answer here (minimum ${minLen} characters)..." 
+          <p style="font-size:0.85rem; color:var(--muted); margin-bottom:0.5rem;" id="codeHelp_${q.id}">Language / Format: <strong>${q.language || 'text'}</strong> • Minimum ${minLen} characters required</p>
+          <label for="code_${q.id}" class="sr-only">Coding answer for question ${currentIndex + 1}</label>
+          <textarea class="code-area" id="code_${q.id}" aria-describedby="codeHelp_${q.id} charCount_${q.id}" placeholder="Write your complete answer here (minimum ${minLen} characters)..." 
             oninput="onCodingInput('${q.id}', ${minLen})" onpaste="onCodingPaste('${q.id}', event)">${val}</textarea>
-          <div class="char-count ${ok ? 'ok' : 'bad'}" id="charCount_${q.id}">
+          <div class="char-count ${ok ? 'ok' : 'bad'}" id="charCount_${q.id}" aria-live="polite">
             ${len} / ${minLen} characters ${ok ? '✓' : '(minimum required)'}
           </div>
         `;
       } else if (q.type === 'voice') {
         const hasRecording = !!answers[q.id];
         html += `
-          <p style="font-size:0.9rem; margin-bottom:0.75rem;">Record your spoken answer (recommended 1–2 minutes)</p>
+          <p style="font-size:0.9rem; margin-bottom:0.75rem;" id="voiceHelp_${q.id}">Record your spoken answer (recommended 1–2 minutes)</p>
           <div class="voice-controls">
-            <button class="btn ${isRecording ? 'btn-danger' : 'btn-primary'}" id="recBtn" onclick="toggleRecording('${q.id}')">
+            <button class="btn ${isRecording ? 'btn-danger' : 'btn-primary'}" id="recBtn" onclick="toggleRecording('${q.id}')" aria-describedby="voiceHelp_${q.id} recStatus">
               ${isRecording ? '⏹ Stop Recording' : '🎤 Start Recording'}
             </button>
-            <span id="recStatus" class="${isRecording ? 'recording' : ''}">${isRecording ? 'Recording...' : (hasRecording ? '✅ Answer recorded' : 'Not recorded yet')}</span>
+            <span id="recStatus" class="${isRecording ? 'recording' : ''}" aria-live="polite">${isRecording ? 'Recording...' : (hasRecording ? '✅ Answer recorded' : 'Not recorded yet')}</span>
           </div>
           <div id="audioPreview" style="margin-top:0.75rem;"></div>
         `;
       }
 
       document.getElementById('questionArea').innerHTML = html;
+      try {
+        announceA11y('Question ' + (currentIndex + 1) + ' of ' + questions.length + (q.type ? (', ' + q.type) : ''));
+        const qa = document.getElementById('questionArea');
+        if (qa) {
+          qa.setAttribute('role', 'group');
+          qa.setAttribute('aria-label', 'Question ' + (currentIndex + 1));
+          const focusable = qa.querySelector('input, textarea, button, select');
+          if (focusable) focusable.focus({ preventScroll: true });
+        }
+      } catch (e) {}
 
       // Restore audio preview
       if (q.type === 'voice' && answers[q.id]) {
@@ -1815,6 +2050,7 @@
       document.getElementById('testUI').style.display = 'none';
       document.getElementById('completedUI').style.display = 'block';
       showHelpFab(true);
+      try { showMotivationQuote(); } catch (e) {}
       document.getElementById('scoreDisplay').innerHTML = `
         Recorded score (MCQ auto-checked): <strong>${score} / 100</strong><br>
         <small style="color:var(--muted);">MCQ: ${mcqCorrect}/${mcqCount} correct (${mcqEarned} of ${mcqMarks} MCQ marks). Coding / voice (if any) are reviewed manually by the team.</small>
@@ -2036,6 +2272,7 @@
     init();
   </script>
 
+  </main>
   <!-- Support Help Chat -->
   <button type="button" id="helpFab" onclick="toggleHelpPanel()" title="Help"
     style="display:none;position:fixed;bottom:20px;right:20px;z-index:9999;border:none;border-radius:999px;padding:0.85rem 1.2rem;background:#4f46e5;color:#fff;font-weight:600;box-shadow:0 8px 24px rgba(79,70,229,0.4);cursor:pointer;">
