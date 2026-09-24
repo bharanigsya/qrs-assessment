@@ -2456,8 +2456,9 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       }
       if (a.score !== null && a.score !== undefined && a.score !== '') {
         const mcq = Number(a.score) || 0;
+        const coding = (a.codingScore !== null && a.codingScore !== undefined && a.codingScore !== '') ? Number(a.codingScore) || 0 : 0;
         const voice = (a.voiceScore !== null && a.voiceScore !== undefined) ? Number(a.voiceScore) || 0 : 0;
-        return Math.min(100, mcq + voice);
+        return Math.min(100, mcq + coding + voice);
       }
       // Fallback: recalculate MCQ from stored answers (if sync lost score but kept answers)
       const calc = computeMcqFromAnswers(a);
@@ -2469,7 +2470,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
     }
     function formatScoreCell(a) {
       if (isFinalScored(a)) {
-        return '<strong>' + totalScore(a) + '</strong>/100<br><small style="color:#059669;">Final</small>';
+        return '<strong>' + totalScore(a) + '</strong>/100<br><small style="color:#059669;">Final' + (a.codingEffort ? ' · ' + a.codingEffort + ' effort' : '') + '</small>';
       }
       if (a.score != null && a.score !== '') {
         const mcqHint = (a.mcqCount != null)
@@ -3195,36 +3196,87 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       refreshAll();
     }
 
+
+    function getCodingMaxMarks(a) {
+      if (a.codingMarksPending != null && a.codingMarksPending !== '') return Number(a.codingMarksPending) || 50;
+      // Infer from answers: if any long text answer exists, allow up to 50
+      if (a.answers) {
+        const hasCode = Object.keys(a.answers).some(function(k) {
+          const v = a.answers[k];
+          return typeof v === 'string' && v.length >= 40;
+        });
+        if (hasCode) return 50;
+      }
+      return 50;
+    }
+    function updateReviewTotalPreview(id) {
+      const a = getAssessments().find(function(x) { return x.id === id; });
+      if (!a) return;
+      const mcq = Number(a.score) || 0;
+      const cEl = document.getElementById('codingScoreInput');
+      const vEl = document.getElementById('voiceScoreInput');
+      const fEl = document.getElementById('finalScoreInput');
+      const prev = document.getElementById('reviewTotalPreview');
+      let coding = 0;
+      if (cEl && cEl.value !== '') coding = parseInt(cEl.value, 10) || 0;
+      else if (a.codingScore != null && a.codingScore !== '') coding = Number(a.codingScore) || 0;
+      let voice = 0;
+      if (vEl && vEl.value !== '') voice = parseInt(vEl.value, 10) || 0;
+      else if (a.voiceScore != null) voice = Number(a.voiceScore) || 0;
+      const total = Math.min(100, mcq + coding + voice);
+      if (prev) {
+        prev.innerHTML = 'MCQ <strong>' + mcq + '</strong> + Coding <strong>' + coding + '</strong>' +
+          (voice ? (' + Voice <strong>' + voice + '</strong>') : '') +
+          ' = <strong style="color:#4f46e5;font-size:1.15rem;">' + total + ' / 100</strong>';
+      }
+      if (fEl) fEl.value = total;
+    }
+
     function saveReviewPanel(id) {
       const list = getAssessments();
       const idx = list.findIndex(x => x.id === id);
       if (idx < 0) return;
+      const a = list[idx];
+      const cEl = document.getElementById('codingScoreInput');
+      const eEl = document.getElementById('codingEffortSelect');
       const vEl = document.getElementById('voiceScoreInput');
       const tEl = document.getElementById('detailTagSelect');
       const nEl = document.getElementById('adminReviewNote');
+      const maxCoding = getCodingMaxMarks(a);
+      if (cEl && cEl.value !== '') {
+        const c = parseInt(cEl.value, 10);
+        if (isNaN(c) || c < 0 || c > maxCoding) return alert('Coding marks must be 0–' + maxCoding);
+        a.codingScore = c;
+      }
+      if (eEl) a.codingEffort = eEl.value || '';
       if (vEl && vEl.value !== '') {
         const v = parseInt(vEl.value, 10);
         if (isNaN(v) || v < 0 || v > 50) return alert('Voice score must be 0-50');
-        list[idx].voiceScore = v;
+        a.voiceScore = v;
       }
+      // Auto final = MCQ + coding + voice
+      const mcq = Number(a.score) || 0;
+      const coding = (a.codingScore != null && a.codingScore !== '') ? Number(a.codingScore) || 0 : 0;
+      const voice = (a.voiceScore != null && a.voiceScore !== '') ? Number(a.voiceScore) || 0 : 0;
+      let final = Math.min(100, mcq + coding + voice);
       const fEl = document.getElementById('finalScoreInput');
       if (fEl && fEl.value !== '') {
         const f = parseInt(fEl.value, 10);
-        if (isNaN(f) || f < 0 || f > 100) return alert('Final score must be 0–100');
-        list[idx].finalScore = f;
-        list[idx].finalScoreAt = new Date().toISOString();
-        list[idx].finalScoreBy = ssGet('qrs_admin_user') || 'admin';
-        // Setting final score implies completed review
-        if (list[idx].status !== 'completed') {
-          list[idx].status = 'completed';
-          if (!list[idx].completedAt) list[idx].completedAt = new Date().toISOString();
-        }
+        if (!isNaN(f) && f >= 0 && f <= 100) final = f;
       }
-      if (tEl) list[idx].tag = tEl.value || '';
-      if (nEl) list[idx].adminNote = nEl.value || '';
+      a.finalScore = final;
+      a.finalScoreAt = new Date().toISOString();
+      a.finalScoreBy = ssGet('qrs_admin_user') || 'admin';
+      if (a.status !== 'completed') {
+        a.status = 'completed';
+        if (!a.completedAt) a.completedAt = new Date().toISOString();
+      }
+      if (tEl) a.tag = tEl.value || '';
+      if (nEl) a.adminNote = nEl.value || '';
+      list[idx] = a;
       saveOneAssessment(list, id);
-      logActivity('Saved review', list[idx].name);
-      alert('Review saved');
+      logActivity('Saved review', a.name + ' · final ' + final + (a.codingEffort ? ' · effort ' + a.codingEffort : ''));
+      alert('Review saved. Final score: ' + final + '/100' + (a.codingEffort ? ' · Effort: ' + a.codingEffort : ''));
       viewDetail(id);
       refreshAll();
     }
@@ -3568,22 +3620,40 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         '<div style="font-size:0.9rem;line-height:1.45;">' + (typeof buildProctorSummary === 'function' ? buildProctorSummary(a).html : ((a.flags && a.flags.length) ? a.flags.length + ' flags' : 'No flags')) + '</div></div>' +
         '<div class="detail-row"><span>Extra time</span><span>' + (a.extraMinutes || 0) + ' min</span></div>';
 
-      // Manual voice scoring + feedback in one panel
+      // Coding + voice + effort review panel
+      const mcqShow = (a.score != null && a.score !== '') ? Number(a.score) : 0;
+      const codingMax = (typeof getCodingMaxMarks === 'function') ? getCodingMaxMarks(a) : (a.codingMarksPending || 50);
+      const codingVal = (a.codingScore != null && a.codingScore !== '') ? a.codingScore : '';
+      const effortVal = a.codingEffort || '';
       html += '<div style="margin-top:1rem;padding:0.9rem;background:#f8fafc;border-radius:10px;border:1px solid #e2e8f0;">' +
-        '<strong>Review panel — Final score, voice & notes</strong>' +
-        '<p style="font-size:0.8rem;color:#64748b;margin:0.35rem 0 0;">MCQ is auto-scored. After reviewing coding/voice, set a <strong>Final score (0–100)</strong>.</p>' +
-        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.8rem;margin-top:0.55rem;">' +
-        '<div><label style="font-size:0.8rem;color:#64748b;">Final score (0–100)</label><br>' +
-        '<input type="number" id="finalScoreInput" min="0" max="100" value="' + (isFinalScored(a) ? a.finalScore : '') + '" placeholder="e.g. 78" style="max-width:120px;margin-top:0.25rem;"></div>' +
-        '<div><label style="font-size:0.8rem;color:#64748b;">Voice score (0-50)</label><br>' +
-        '<input type="number" id="voiceScoreInput" min="0" max="50" value="' + (a.voiceScore !== undefined && a.voiceScore !== null ? a.voiceScore : '') + '" style="max-width:120px;margin-top:0.25rem;"></div>' +
+        '<strong>Review panel — MCQ + coding marks + effort</strong>' +
+        '<p style="font-size:0.8rem;color:#64748b;margin:0.35rem 0 0;">MCQ is auto-scored. Give coding marks for effort even if the code is incomplete or wrong. Total updates as you type.</p>' +
+        '<div style="margin-top:0.55rem;padding:0.55rem 0.7rem;background:#eef2ff;border-radius:8px;font-size:0.9rem;" id="reviewTotalPreview">' +
+        'MCQ <strong>' + mcqShow + '</strong> + Coding <strong>' + (codingVal !== '' ? codingVal : '0') + '</strong> = <strong style="color:#4f46e5;">' + Math.min(100, mcqShow + (Number(codingVal)||0)) + ' / 100</strong></div>' +
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:0.8rem;margin-top:0.65rem;">' +
+        '<div><label style="font-size:0.8rem;color:#64748b;">MCQ (auto)</label><br>' +
+        '<div style="font-size:1.2rem;font-weight:700;color:#4f46e5;margin-top:0.25rem;">' + mcqShow + '</div></div>' +
+        '<div><label style="font-size:0.8rem;color:#64748b;">Coding marks (0–' + codingMax + ')</label><br>' +
+        '<input type="number" id="codingScoreInput" min="0" max="' + codingMax + '" value="' + codingVal + '" placeholder="e.g. 15" ' +
+        'oninput="updateReviewTotalPreview(\'' + id + '\')" style="max-width:120px;margin-top:0.25rem;"></div>' +
+        '<div><label style="font-size:0.8rem;color:#64748b;">Coding effort</label><br>' +
+        '<select id="codingEffortSelect" style="margin-top:0.25rem;max-width:160px;">' +
+        '<option value=""' + (!effortVal?' selected':'') + '>— Select —</option>' +
+        '<option value="Strong"' + (effortVal==='Strong'?' selected':'') + '>Strong attempt</option>' +
+        '<option value="Partial"' + (effortVal==='Partial'?' selected':'') + '>Partial / tried</option>' +
+        '<option value="Weak"' + (effortVal==='Weak'?' selected':'') + '>Weak / little effort</option>' +
+        '<option value="None"' + (effortVal==='None'?' selected':'') + '>No real attempt</option></select></div>' +
+        '<div><label style="font-size:0.8rem;color:#64748b;">Voice (0–50, optional)</label><br>' +
+        '<input type="number" id="voiceScoreInput" min="0" max="50" value="' + (a.voiceScore !== undefined && a.voiceScore !== null ? a.voiceScore : '') + '" oninput="updateReviewTotalPreview(\'' + id + '\')" style="max-width:120px;margin-top:0.25rem;"></div>' +
+        '<div><label style="font-size:0.8rem;color:#64748b;">Final total (0–100)</label><br>' +
+        '<input type="number" id="finalScoreInput" min="0" max="100" value="' + (isFinalScored(a) ? a.finalScore : Math.min(100, mcqShow + (Number(codingVal)||0))) + '" style="max-width:120px;margin-top:0.25rem;"></div>' +
         '<div><label style="font-size:0.8rem;color:#64748b;">Tag</label><br>' +
         '<select id="detailTagSelect" style="margin-top:0.25rem;max-width:140px;">' +
         '<option value=""' + (!a.tag?' selected':'') + '>—</option>' +
         '<option value="Selected"' + (a.tag==='Selected'?' selected':'') + '>Selected</option>' +
         '<option value="Hold"' + (a.tag==='Hold'?' selected':'') + '>Hold</option>' +
         '<option value="Rejected"' + (a.tag==='Rejected'?' selected':'') + '>Rejected</option></select></div></div>' +
-        '<div style="margin-top:0.65rem;"><label style="font-size:0.8rem;color:#64748b;">Admin review note</label>' +
+        '<div style="margin-top:0.65rem;"><label style="font-size:0.8rem;color:#64748b;">Admin review note (effort, code quality, interview tips)</label>' +
         '<textarea id="adminReviewNote" style="width:100%;min-height:70px;margin-top:0.25rem;border:1px solid #e2e8f0;border-radius:8px;padding:0.5rem;font-family:inherit;">' + (a.adminNote || '') + '</textarea></div>' +
         (a.candidateFeedback ? '<div style="margin-top:0.6rem;padding:0.55rem;background:#ecfdf5;border-radius:8px;font-size:0.87rem;"><strong>Candidate note:</strong> ' + String(a.candidateFeedback).replace(/</g,'&lt;') + '</div>' : '') +
         '<button class="btn btn-primary" style="margin-top:0.55rem;padding:0.35rem 0.75rem;font-size:0.85rem;" onclick="saveReviewPanel(\'' + id + '\')">Save review</button></div>';

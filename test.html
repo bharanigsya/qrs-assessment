@@ -2017,6 +2017,8 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
           mcqTotal: mcqMarks,
           mcqCorrect: mcqCorrect,
           mcqCount: mcqCount,
+          codingMarksPending: assessment.codingMarksPending || 0,
+          voiceMarksPending: assessment.voiceMarksPending || 0,
           answers: answers,
           flags: flags,
           completedAt: assessment.completedAt,
@@ -2051,9 +2053,24 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
       document.getElementById('completedUI').style.display = 'block';
       showHelpFab(true);
       try { showMotivationQuote(); } catch (e) {}
+      const codingQs = questions.filter(q => q.type === 'coding');
+      const voiceQs = questions.filter(q => q.type === 'voice');
+      const codingMarks = codingQs.reduce((s, q) => s + (q.marks || 0), 0);
+      const voiceMarks = voiceQs.reduce((s, q) => s + (q.marks || 0), 0);
+      assessment.codingMarksPending = codingMarks;
+      assessment.voiceMarksPending = voiceMarks;
+      let scoreLine = `<strong>${score} / 100</strong>`;
+      let detail = `MCQ: ${mcqCorrect}/${mcqCount} correct (${mcqEarned} of ${mcqMarks} marks).`;
+      if (codingMarks > 0 || voiceMarks > 0) {
+        scoreLine = `<strong>${score} / 100</strong> <span style="font-size:0.9rem;color:#64748b;">(MCQ only so far)</span>`;
+        detail += ` Coding (${codingMarks} marks)` + (voiceMarks ? ` and voice (${voiceMarks} marks)` : '') +
+          ` are reviewed by HR and added later — that is why a perfect MCQ often shows <strong>50/100</strong> on technical roles.`;
+      } else {
+        detail += ' All marks are from MCQ (auto-scored).';
+      }
       document.getElementById('scoreDisplay').innerHTML = `
-        Recorded score (MCQ auto-checked): <strong>${score} / 100</strong><br>
-        <small style="color:var(--muted);">MCQ: ${mcqCorrect}/${mcqCount} correct (${mcqEarned} of ${mcqMarks} MCQ marks). Coding / voice (if any) are reviewed manually by the team.</small>
+        Provisional score: ${scoreLine}<br>
+        <small style="color:var(--muted);">${detail}</small>
         ${flags.length > 0 ? `<br><span style="color:var(--danger);">⚠️ ${flags.length} proctoring flag(s) recorded</span>` : ''}
       `;
     }
