@@ -3175,6 +3175,8 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
           '<div class="sep"></div>' +
           '<button type="button" onclick="closeAllMenus(); printReport(\'' + a.id + '\')">📄 Print report</button>' +
           '<button type="button" onclick="closeAllMenus(); printResultCard(\'' + a.id + '\')">🪪 Print result card</button>' +
+          '<button type="button" onclick="closeAllMenus(); sendResultCardEmail(\'' + a.id + '\')">📧 Email result card</button>' +
+          '<button type="button" onclick="closeAllMenus(); createResultCardLink(\'' + a.id + '\')">🪪 Result card link (5h)</button>' +
           (isAdmin() ? '<div class="sep"></div><button type="button" class="danger" onclick="closeAllMenus(); deleteCandidate(\'' + a.id + '\')">🗑 Delete candidate</button>' : '') +
         '</div></div></td></tr>'
       ).join('') : '<tr><td colspan="11" style="text-align:center;color:#94a3b8;">No matching results</td></tr>';
@@ -3196,6 +3198,190 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       refreshAll();
     }
 
+
+
+    // ----- Free on-device "AI" code review (no API key / no cost) -----
+    function analyzeCodeAnswer(text, maxMarks) {
+      maxMarks = maxMarks || 25;
+      const raw = String(text || '');
+      const code = raw.trim();
+      const len = code.length;
+      const lines = code ? code.split(/\r?\n/).length : 0;
+      const lower = code.toLowerCase();
+
+      const signals = [];
+      let score = 0; // 0–100 quality signal
+
+      // Length / effort
+      if (len >= 50) { score += 12; signals.push('Meets minimum length'); }
+      else if (len >= 20) { score += 6; signals.push('Short answer — some attempt'); }
+      else if (len > 0) { score += 2; signals.push('Very short — little content'); }
+      else { signals.push('Empty answer'); }
+
+      if (lines >= 5) { score += 10; signals.push(lines + ' lines of text'); }
+      else if (lines >= 2) { score += 5; signals.push(lines + ' lines'); }
+
+      // Structure signals
+      const hasBraces = /[\{\}]/.test(code);
+      const hasParens = /\(.*\)/.test(code);
+      const hasSemicolon = /;/.test(code);
+      const hasIndent = /^[ \t]+/m.test(code);
+      if (hasBraces) { score += 8; signals.push('Uses blocks { }'); }
+      if (hasParens) { score += 4; signals.push('Uses function/call style ( )'); }
+      if (hasIndent) { score += 4; signals.push('Has indentation'); }
+
+      // Language keywords (multi-language soft match)
+      const kwGroups = [
+        ['function', 'def ', 'void ', 'public ', 'private ', 'class ', 'return '],
+        ['if ', 'else', 'for ', 'while ', 'switch', 'case '],
+        ['select ', 'from ', 'where ', 'insert ', 'update '],
+        ['console.', 'print(', 'system.out', 'echo ', 'printf'],
+        ['try', 'catch', 'except', 'throw'],
+        ['const ', 'let ', 'var ', 'int ', 'string ', 'boolean']
+      ];
+      let kwHits = 0;
+      kwGroups.forEach(function(group) {
+        if (group.some(function(k) { return lower.indexOf(k) >= 0; })) kwHits++;
+      });
+      score += Math.min(20, kwHits * 5);
+      if (kwHits >= 2) signals.push('Looks like real code keywords');
+      else if (kwHits === 1) signals.push('Some code-like keywords');
+
+      // Comments / explanation (effort even if wrong)
+      if (/\/\/|#|\/\*/.test(code)) { score += 6; signals.push('Includes comments'); }
+      if (/\b(because|approach|logic|step|explain)\b/i.test(code)) {
+        score += 5; signals.push('Has explanation text');
+      }
+
+      // Red flags
+      const risks = [];
+      if (len > 0 && len < 30) risks.push('Too short for full solution');
+      if (len > 80 && kwHits === 0 && !hasBraces) risks.push('Long text but little code structure');
+      if (/(lorem ipsum|asdf|test test|aaaa)/i.test(code)) {
+        risks.push('Possible placeholder / spam text');
+        score = Math.max(0, score - 15);
+      }
+      // Copy-paste density: very long single line
+      if (code.split(/\n/).some(function(l) { return l.length > 400; })) {
+        risks.push('Very long single line (possible paste)');
+      }
+
+      score = Math.max(0, Math.min(100, score));
+
+      // Suggested marks proportional to maxMarks
+      let suggested = Math.round((score / 100) * maxMarks);
+      // Floor for any real attempt
+      if (len >= 50 && suggested < Math.max(3, Math.round(maxMarks * 0.12))) {
+        suggested = Math.max(3, Math.round(maxMarks * 0.12));
+      }
+      if (len === 0) suggested = 0;
+
+      let effort = 'None';
+      if (score >= 70) effort = 'Strong';
+      else if (score >= 40) effort = 'Partial';
+      else if (score >= 15) effort = 'Weak';
+      else effort = 'None';
+
+      let summary = '';
+      if (len === 0) summary = 'No coding answer submitted.';
+      else if (effort === 'Strong') summary = 'Solid structure and length — review correctness, then award mid–high coding marks.';
+      else if (effort === 'Partial') summary = 'Clear attempt with some structure. Code may be incomplete or wrong — still deserves partial marks for effort.';
+      else if (effort === 'Weak') summary = 'Minimal attempt. Consider a few marks if they showed any reasoning.';
+      else summary = 'Little or no meaningful coding effort.';
+
+      return {
+        length: len,
+        lines: lines,
+        score: score,
+        suggestedMarks: suggested,
+        maxMarks: maxMarks,
+        effort: effort,
+        signals: signals,
+        risks: risks,
+        summary: summary
+      };
+    }
+
+    function getCodingAnswersForReview(a) {
+      const out = [];
+      if (!a || !a.answers) return out;
+      let qs = [];
+      try {
+        if (typeof QUESTION_BANK !== 'undefined' && QUESTION_BANK[a.role] && QUESTION_BANK[a.role][a.level]) {
+          qs = QUESTION_BANK[a.role][a.level].questions || [];
+        }
+      } catch (e) {}
+      const codingQs = qs.filter(function(q) { return q.type === 'coding'; });
+      if (codingQs.length) {
+        codingQs.forEach(function(q, i) {
+          const ans = a.answers[q.id];
+          if (ans == null || String(ans).trim() === '') return;
+          out.push({
+            id: q.id,
+            title: q.question || q.text || ('Coding Q' + (i + 1)),
+            marks: q.marks || 25,
+            answer: String(ans)
+          });
+        });
+      }
+      // Fallback: any long text answer not matched as MCQ index
+      if (!out.length) {
+        Object.keys(a.answers).forEach(function(k) {
+          const v = a.answers[k];
+          if (typeof v === 'string' && v.trim().length >= 40) {
+            out.push({ id: k, title: 'Coding / written answer (' + k + ')', marks: 25, answer: v });
+          }
+        });
+      }
+      return out;
+    }
+
+    function buildAiCodeReviewHtml(a) {
+      const items = getCodingAnswersForReview(a);
+      if (!items.length) {
+        return '<div style="margin-top:1rem;padding:0.75rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;font-size:0.88rem;color:#64748b;">No coding answers found for AI review.</div>';
+      }
+      let totalSuggest = 0;
+      let maxTotal = 0;
+      let bestEffort = 'None';
+      const order = { None: 0, Weak: 1, Partial: 2, Strong: 3 };
+      let html = '<div style="margin-top:1rem;padding:0.9rem;background:linear-gradient(135deg,#f5f3ff,#eef2ff);border:1px solid #c4b5fd;border-radius:12px;">';
+      html += '<strong>🤖 AI code review</strong> <small style="color:#64748b;">(on-device analysis — free, no external API)</small>';
+      html += '<p style="font-size:0.8rem;color:#64748b;margin:0.35rem 0 0.6rem;">Looks at length, structure, keywords, and comments — not full correctness. You still decide final marks.</p>';
+      items.forEach(function(item, idx) {
+        const r = analyzeCodeAnswer(item.answer, item.marks);
+        totalSuggest += r.suggestedMarks;
+        maxTotal += r.maxMarks;
+        if ((order[r.effort] || 0) > (order[bestEffort] || 0)) bestEffort = r.effort;
+        const effortColor = r.effort === 'Strong' ? '#059669' : (r.effort === 'Partial' ? '#d97706' : (r.effort === 'Weak' ? '#ea580c' : '#94a3b8'));
+        html += '<div style="margin-bottom:0.75rem;padding:0.7rem;background:#fff;border:1px solid #e2e8f0;border-radius:10px;">';
+        html += '<div style="font-weight:600;font-size:0.88rem;margin-bottom:0.35rem;">Q' + (idx + 1) + ' · ' + String(item.title).slice(0, 120).replace(/</g,'&lt;') + ' <span style="color:#64748b;font-weight:500;">(' + item.marks + 'm)</span></div>';
+        html += '<pre style="margin:0 0 0.5rem;padding:0.55rem;background:#0f172a;color:#e2e8f0;border-radius:8px;font-size:0.78rem;max-height:140px;overflow:auto;white-space:pre-wrap;word-break:break-word;">' + String(item.answer).slice(0, 2500).replace(/</g,'&lt;') + (item.answer.length > 2500 ? '\n…' : '') + '</pre>';
+        html += '<div style="font-size:0.85rem;margin-bottom:0.3rem;"><span style="font-weight:700;color:' + effortColor + ';">Effort: ' + r.effort + '</span> · Quality signal ' + r.score + '/100 · <strong>Suggested ' + r.suggestedMarks + '/' + r.maxMarks + '</strong></div>';
+        html += '<div style="font-size:0.82rem;color:#334155;margin-bottom:0.25rem;">' + r.summary + '</div>';
+        if (r.signals.length) html += '<div style="font-size:0.78rem;color:#059669;">✓ ' + r.signals.slice(0, 5).join(' · ') + '</div>';
+        if (r.risks.length) html += '<div style="font-size:0.78rem;color:#b45309;">⚠ ' + r.risks.join(' · ') + '</div>';
+        html += '</div>';
+      });
+      totalSuggest = Math.min(getCodingMaxMarks(a), totalSuggest);
+      html += '<div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-top:0.35rem;">';
+      html += '<span style="font-size:0.9rem;">Combined suggestion: <strong>' + totalSuggest + '</strong> coding marks · overall effort <strong>' + bestEffort + '</strong></span>';
+      html += '<button type="button" class="btn btn-primary" style="padding:0.35rem 0.75rem;font-size:0.82rem;" onclick="applyAiCodingSuggestion(\'' + a.id + '\',' + totalSuggest + ',\'' + bestEffort + '\')">Apply suggested marks + effort</button>';
+      html += '</div></div>';
+      return html;
+    }
+
+    function applyAiCodingSuggestion(id, marks, effort) {
+      const cEl = document.getElementById('codingScoreInput');
+      const eEl = document.getElementById('codingEffortSelect');
+      if (cEl) {
+        cEl.value = marks;
+        cEl.dispatchEvent(new Event('input'));
+      }
+      if (eEl && effort) eEl.value = effort;
+      if (typeof updateReviewTotalPreview === 'function') updateReviewTotalPreview(id);
+      showToast('Applied AI suggestion: ' + marks + ' coding marks · ' + effort + ' effort — review then Save');
+    }
 
     function getCodingMaxMarks(a) {
       if (a.codingMarksPending != null && a.codingMarksPending !== '') return Number(a.codingMarksPending) || 50;
@@ -3273,6 +3459,13 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       }
       if (tEl) a.tag = tEl.value || '';
       if (nEl) a.adminNote = nEl.value || '';
+      const hrEl = document.getElementById('hrReplyToNote');
+      if (hrEl) {
+        a.hrReplyToNote = (hrEl.value || '').trim();
+        a.hrReplyAt = new Date().toISOString();
+      }
+      const shareEl = document.getElementById('hrReplyShareOnCard');
+      if (shareEl) a.hrReplyShareOnCard = !!shareEl.checked;
       list[idx] = a;
       saveOneAssessment(list, id);
       logActivity('Saved review', a.name + ' · final ' + final + (a.codingEffort ? ' · effort ' + a.codingEffort : ''));
@@ -3620,6 +3813,8 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         '<div style="font-size:0.9rem;line-height:1.45;">' + (typeof buildProctorSummary === 'function' ? buildProctorSummary(a).html : ((a.flags && a.flags.length) ? a.flags.length + ' flags' : 'No flags')) + '</div></div>' +
         '<div class="detail-row"><span>Extra time</span><span>' + (a.extraMinutes || 0) + ' min</span></div>';
 
+      try { html += buildAiCodeReviewHtml(a); } catch (e) { console.warn('AI code review', e); }
+
       // Coding + voice + effort review panel
       const mcqShow = (a.score != null && a.score !== '') ? Number(a.score) : 0;
       const codingMax = (typeof getCodingMaxMarks === 'function') ? getCodingMaxMarks(a) : (a.codingMarksPending || 50);
@@ -3655,19 +3850,78 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         '<option value="Rejected"' + (a.tag==='Rejected'?' selected':'') + '>Rejected</option></select></div></div>' +
         '<div style="margin-top:0.65rem;"><label style="font-size:0.8rem;color:#64748b;">Admin review note (effort, code quality, interview tips)</label>' +
         '<textarea id="adminReviewNote" style="width:100%;min-height:70px;margin-top:0.25rem;border:1px solid #e2e8f0;border-radius:8px;padding:0.5rem;font-family:inherit;">' + (a.adminNote || '') + '</textarea></div>' +
-        (a.candidateFeedback ? '<div style="margin-top:0.6rem;padding:0.55rem;background:#ecfdf5;border-radius:8px;font-size:0.87rem;"><strong>Candidate note:</strong> ' + String(a.candidateFeedback).replace(/</g,'&lt;') + '</div>' : '') +
+        (a.candidateFeedback || a.jobMotivation ? '' : '') +
         '<button class="btn btn-primary" style="margin-top:0.55rem;padding:0.35rem 0.75rem;font-size:0.85rem;" onclick="saveReviewPanel(\'' + id + '\')">Save review</button></div>';
 
-      if (a.candidateFeedback) {
-        html += '<div style="margin-top:0.9rem;padding:0.85rem;background:#f0fdf4;border:1px solid #86efac;border-radius:10px;">' +
-          '<strong>Candidate note</strong>' +
-          (a.feedbackAt ? ' <small style="color:#64748b;">(' + new Date(a.feedbackAt).toLocaleString() + ')</small>' : '') +
-          '<div style="margin-top:0.4rem;font-size:0.92rem;white-space:pre-wrap;">' + String(a.candidateFeedback).replace(/</g,'&lt;') + '</div></div>';
-      }
+      const candNote = a.candidateFeedback || a.jobMotivation || '';
+      html += '<div style="margin-top:1rem;padding:1.1rem 1.25rem;background:#fff;border:1px solid #cbd5e1;border-radius:12px;box-shadow:0 1px 2px rgba(15,23,42,0.04);">' +
+        '<div style="font-size:0.72rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#64748b;margin-bottom:0.5rem;">HR only · Candidate note &amp; your reply</div>' +
+        '<div style="margin-bottom:0.85rem;">' +
+        '<div style="font-size:0.8rem;font-weight:700;color:#4f46e5;margin-bottom:0.3rem;">Candidate — What\'s on their mind</div>' +
+        (a.feedbackAt ? '<div style="font-size:0.78rem;color:#94a3b8;margin-bottom:0.4rem;">Submitted ' + new Date(a.feedbackAt).toLocaleString() + '</div>' : '') +
+        (candNote
+          ? '<div style="font-family:Georgia,\'Times New Roman\',Times,serif;font-size:1.02rem;line-height:1.7;color:#1e293b;white-space:pre-wrap;border-left:3px solid #6366f1;padding-left:0.9rem;background:#f8fafc;padding:0.75rem 0.9rem;border-radius:0 8px 8px 0;">' + String(candNote).replace(/</g,'&lt;') + '</div>'
+          : '<div style="color:#94a3b8;font-size:0.9rem;">No note submitted yet.</div>') +
+        '</div>' +
+        '<div>' +
+        '<div style="font-size:0.8rem;font-weight:700;color:#059669;margin-bottom:0.3rem;">HR reply to their note</div>' +
+        '<textarea id="hrReplyToNote" maxlength="2000" placeholder="Write your reply to the candidate\'s thoughts (saved with review)…" style="width:100%;min-height:90px;border:1px solid #bbf7d0;border-radius:10px;padding:0.65rem 0.85rem;font-family:Georgia,\'Times New Roman\',Times,serif;font-size:0.98rem;line-height:1.6;">' +
+        String(a.hrReplyToNote || '').replace(/</g,'&lt;').replace(/"/g,'&quot;') + '</textarea>' +
+        (a.hrReplyAt ? '<div style="font-size:0.78rem;color:#94a3b8;margin-top:0.35rem;">Last saved ' + new Date(a.hrReplyAt).toLocaleString() + '</div>' : '') +
+        '<label style="display:flex;align-items:center;gap:0.4rem;margin-top:0.5rem;font-size:0.82rem;color:#475569;cursor:pointer;">' +
+        '<input type="checkbox" id="hrReplyShareOnCard" style="width:auto;" ' + (a.hrReplyShareOnCard ? 'checked' : '') + '> Show this HR reply on the candidate result card</label>' +
+        '</div></div>';
       if (a.flags && a.flags.length) {
-        html += '<div style="margin-top:0.8rem;"><strong>Flag Reasons:</strong><ul style="margin:0.4rem 0 0 1.2rem;font-size:0.87rem;">' +
-          a.flags.map(f => '<li>' + f.reason + ' <small>(' + new Date(f.time).toLocaleString() + ')</small></li>').join('') + '</ul></div>';
+        html += '<div style="margin-top:1rem;padding:1rem 1.1rem;background:#fef2f2;border:1px solid #fecaca;border-radius:12px;">' +
+          '<div style="font-size:0.72rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#991b1b;margin-bottom:0.35rem;">HR only · Why flagged</div>' +
+          '<strong style="color:#7f1d1d;">' + a.flags.length + ' proctoring flag' + (a.flags.length === 1 ? '' : 's') + ' — full detail</strong>' +
+          '<p style="font-size:0.82rem;color:#64748b;margin:0.3rem 0 0.55rem;">Candidates only see the <em>count</em> on their result card. Full reasons below are HR-only.</p>' +
+          '<ol style="margin:0;padding-left:1.25rem;font-size:0.9rem;line-height:1.55;">' +
+          a.flags.map(function(f, i) {
+            const t = f.time ? new Date(f.time).toLocaleString() : '—';
+            return '<li style="margin-bottom:0.35rem;"><strong>' + String(f.reason || 'Flag').replace(/</g,'&lt;') + '</strong>' +
+              ' <span style="color:#64748b;font-size:0.82rem;">· ' + t + '</span></li>';
+          }).join('') +
+          '</ol></div>';
       }
+
+      // Full answer sheet — HR only
+      try {
+        let qs = [];
+        if (typeof QUESTION_BANK !== 'undefined' && QUESTION_BANK[a.role] && QUESTION_BANK[a.role][a.level]) {
+          qs = QUESTION_BANK[a.role][a.level].questions || [];
+        }
+        if (qs.length && a.answers) {
+          html += '<div style="margin-top:1rem;padding:1rem 1.1rem;background:#fff;border:1px solid #e2e8f0;border-radius:12px;">';
+          html += '<div style="font-size:0.72rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#64748b;margin-bottom:0.35rem;">HR only · Full test answers</div>';
+          html += '<strong>Answer sheet</strong> <small style="color:#64748b;">(not shown on candidate result card)</small>';
+          html += '<div style="margin-top:0.65rem;max-height:320px;overflow-y:auto;">';
+          qs.forEach(function(q, i) {
+            const ans = a.answers[q.id];
+            const has = ans !== undefined && ans !== null && String(ans).trim() !== '';
+            let ansHtml = '<span style="color:#94a3b8;">— not answered —</span>';
+            if (has) {
+              if (q.type === 'mcq' && q.options) {
+                const idx = Number(ans);
+                const ok = Number(ans) === Number(q.correct);
+                const chosen = (q.options[idx] != null) ? q.options[idx] : ans;
+                ansHtml = '<span style="color:' + (ok ? '#059669' : '#dc2626') + ';font-weight:600;">' +
+                  String(chosen).replace(/</g,'&lt;') + '</span>' +
+                  (ok ? ' ✓' : (' ✗ <small style="color:#64748b;">correct: ' + String(q.options[q.correct] || '').replace(/</g,'&lt;') + '</small>'));
+              } else {
+                ansHtml = '<pre style="margin:0.25rem 0 0;padding:0.5rem;background:#0f172a;color:#e2e8f0;border-radius:8px;font-size:0.78rem;white-space:pre-wrap;max-height:120px;overflow:auto;">' +
+                  String(ans).slice(0, 3000).replace(/</g,'&lt;') + '</pre>';
+              }
+            }
+            html += '<div style="margin-bottom:0.75rem;padding-bottom:0.65rem;border-bottom:1px solid #f1f5f9;">';
+            html += '<div style="font-size:0.85rem;font-weight:600;">Q' + (i+1) + '. [' + (q.type||'').toUpperCase() + '] (' + (q.marks||0) + 'm)</div>';
+            html += '<div style="font-size:0.82rem;color:#475569;margin:0.2rem 0 0.35rem;">' + String(q.question || q.text || '').slice(0, 200).replace(/</g,'&lt;') + '</div>';
+            html += '<div style="font-size:0.85rem;">' + ansHtml + '</div></div>';
+          });
+          html += '</div></div>';
+        }
+      } catch (e) { console.warn(e); }
+
       const coordMediaLock = (typeof isCoordinator === 'function' && isCoordinator());
       if (coordMediaLock) {
         html += '<div style="margin-top:1rem;padding:0.75rem;background:#fff7ed;border:1px solid #fdba74;border-radius:10px;font-size:0.88rem;">Proctor photos & videos are restricted for Coordinator role. Ask Admin for full media review.</div>';
@@ -3728,6 +3982,8 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
 html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' +
         '<button class="btn btn-primary" onclick="resendLink(\'' + id + '\')">🔗 Resend / Generate New Link</button>' +
         '<button class="btn btn-outline" onclick="printReport(\'' + id + '\')">Print / PDF Report</button>' +
+        '<button class="btn btn-outline" onclick="sendResultCardEmail(\'' + id + '\')">📧 Email result card</button>' +
+        '<button class="btn btn-outline" onclick="createResultCardLink(\'' + id + '\')">🪪 Result card link (5h)</button>' +
         '<button class="btn btn-outline" onclick="printProctorReport(\'' + id + '\')">📄 Proctoring PDF (photos/video log)</button>' +
         (isAdmin() ? '<button class="btn btn-outline" onclick="clearCandidateMedia(\'' + id + '\')">Clear media</button> <button class="btn btn-danger" onclick="deleteCandidate(\'' + id + '\')">Delete Candidate</button>' : '') +
         '</div>' +
@@ -4390,6 +4646,105 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
       t.textContent = msg;
       document.body.appendChild(t);
       setTimeout(() => t.remove(), 2200);
+    }
+
+
+
+    async function createResultCardLink(id) {
+      const a = getAssessments().find(function(x) { return x.id === id; });
+      if (!a) return alert('Candidate not found');
+      if (a.finalScore === null || a.finalScore === undefined || a.finalScore === '') {
+        if (!confirm('No final score saved yet. Save final score in Review panel first for a proper reveal.\n\nGenerate link anyway with current score?')) return;
+      }
+      try {
+        const res = await fetch(BACKEND_BASE + '/api/assessments/' + encodeURIComponent(id) + '/result-card', {
+          method: 'POST',
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({
+            hours: 5,
+            force: !(a.finalScore !== null && a.finalScore !== undefined && a.finalScore !== '')
+          })
+        });
+        const data = await res.json().catch(function() { return {}; });
+        if (!res.ok || !data.ok) {
+          return alert(data.error || ('Failed: ' + res.status));
+        }
+        // Refresh local record
+        const list = getAssessments();
+        const idx = list.findIndex(function(x) { return x.id === id; });
+        if (idx >= 0) {
+          list[idx].resultCardToken = data.token;
+          list[idx].resultCardExpiresAt = data.expiresAt;
+          list[idx].resultCardRevealed = true;
+          lsSet('assessments', JSON.stringify(list));
+        }
+        const url = (location.origin.replace(/\/$/, '')) + '/result.html?id=' + encodeURIComponent(id) + '&token=' + encodeURIComponent(data.token);
+        try { await navigator.clipboard.writeText(url); } catch (e) {}
+        const box = document.getElementById('resendResult-' + id) || document.getElementById('detailContent');
+        const html =
+          '<div style="margin-top:0.75rem;padding:0.85rem;background:#ecfdf5;border:1px solid #6ee7b7;border-radius:12px;">' +
+          '<strong>Result card link created</strong> (valid 5 hours · revealed after HR review)<br>' +
+          '<input type="text" readonly value="' + url.replace(/"/g, '&quot;') + '" style="width:100%;margin:0.45rem 0;padding:0.45rem;font-size:0.8rem;border:1px solid #bbf7d0;border-radius:8px;" onclick="this.select()">' +
+          '<div style="display:flex;gap:0.4rem;flex-wrap:wrap;">' +
+          '<button type="button" class="btn btn-primary" style="padding:0.3rem 0.65rem;font-size:0.8rem;" onclick="navigator.clipboard.writeText(\'' + url.replace(/'/g, "\\'") + '\').then(function(){alert(\'Copied\')})">Copy link</button>' +
+          '<a class="btn btn-outline" style="padding:0.3rem 0.65rem;font-size:0.8rem;" href="' + url + '" target="_blank">Open</a>' +
+          '<button type="button" class="btn btn-outline" style="padding:0.3rem 0.65rem;font-size:0.8rem;" onclick="window.location.href=\'mailto:' + encodeURIComponent(a.email || '') + '?subject=' + encodeURIComponent('Your QRS Assessment Result Card') + '&body=' + encodeURIComponent('Hi ' + (a.name || '') + ',\n\nYour result card is ready (link valid for 5 hours):\n' + url + '\n\n— QRS Team') + '\'">Email link</button>' +
+          '</div>' +
+          '<small style="color:#64748b;display:block;margin-top:0.4rem;">Candidate sees: marks, flags count, time taken, finished time, strength — not internal notes.</small></div>';
+        if (document.getElementById('resendResult-' + id)) {
+          document.getElementById('resendResult-' + id).innerHTML = html;
+        } else {
+          alert('Result link (copied):\n' + url);
+        }
+        showToast('Result card link ready (5 hours)');
+      } catch (e) {
+        alert('Could not create link: ' + (e.message || e));
+      }
+    }
+
+    async function sendResultCardEmail(id) {
+      const a = getAssessments().find(function(x) { return x.id === id; });
+      if (!a) return alert('Candidate not found');
+      if (!a.email) return alert('No email on file for this candidate');
+      if (!confirm('Send result card email to ' + a.email + '?')) return;
+      const total = (typeof totalScore === 'function') ? totalScore(a) : (a.finalScore != null ? a.finalScore : a.score);
+      const passMark = (typeof getPassMark === 'function') ? getPassMark() : 60;
+      try {
+        const res = await fetch(BACKEND_BASE + '/api/assessments/' + encodeURIComponent(id) + '/send-result', {
+          method: 'POST',
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ email: a.email, totalScore: total, passMark: passMark })
+        });
+        const data = await res.json().catch(function() { return {}; });
+        if (res.ok && data.ok) {
+          showToast('Result card sent to ' + a.email);
+          alert('Result card emailed to ' + a.email);
+          return;
+        }
+        // Free fallback: open mail client with body
+        if (res.status === 503 || data.email_configured === false) {
+          const subject = data.mailto_subject || ('Your QRS Assessment Result — ' + (a.name || ''));
+          const scoreLine = (total != null ? total + ' / 100' : 'To be confirmed');
+          const body =
+            'Hi ' + (a.name || 'Candidate') + ',\n\n' +
+            'Thank you for completing the QRS second-round assessment.\n\n' +
+            'Result card\n' +
+            'Score: ' + scoreLine + '\n' +
+            'Role: ' + (a.role || '') + ' / ' + (a.level || '') + '\n' +
+            'Status: ' + (a.status || '') + '\n\n' +
+            'Our team will contact you regarding the next steps.\n\n' +
+            'Best regards,\nQRS Recruitment Team';
+          if (confirm('Server email is not set up yet (free Gmail SMTP can be added on Render).\n\nOpen your email app to send the result card now?')) {
+            window.location.href = 'mailto:' + encodeURIComponent(a.email) +
+              '?subject=' + encodeURIComponent(subject) +
+              '&body=' + encodeURIComponent(body);
+          }
+          return;
+        }
+        alert('Could not send: ' + (data.error || res.status));
+      } catch (e) {
+        alert('Could not reach server: ' + (e.message || e));
+      }
     }
 
     function printResultCard(id) {

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="frame-ancestors 'none'">
+  <title>Assessment Result | QRS</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    body { background: #f1f5f9; min-height: 100vh; }
+    .result-wrap { max-width: 480px; margin: 2rem auto; padding: 0 1rem; }
+    .result-card {
+      background: #fff; border-radius: 16px; border: 1px solid #e2e8f0;
+      box-shadow: 0 8px 30px rgba(15,23,42,0.08); padding: 1.75rem 1.5rem; text-align: center;
+    }
+    .result-card h1 { font-size: 1.25rem; margin: 0.5rem 0 0.25rem; color: #0f172a; }
+    .muted { color: #64748b; font-size: 0.9rem; }
+    .score-big { font-size: 2.75rem; font-weight: 800; color: #4f46e5; margin: 0.75rem 0 0.25rem; line-height: 1; }
+    .grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 0.65rem; margin-top: 1.25rem; text-align: left;
+    }
+    .cell {
+      background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 0.75rem 0.85rem;
+    }
+    .cell .lab { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #94a3b8; }
+    .cell .val { font-size: 1.05rem; font-weight: 700; color: #0f172a; margin-top: 0.2rem; }
+    .strength {
+      display: inline-block; margin-top: 1rem; padding: 0.4rem 0.9rem; border-radius: 999px;
+      font-weight: 700; font-size: 0.9rem; background: #eef2ff; color: #3730a3; border: 1px solid #c7d2fe;
+    }
+    .timer-bar {
+      margin-top: 1.25rem; font-size: 0.82rem; color: #64748b;
+      padding: 0.55rem 0.75rem; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 10px;
+    }
+    .state { padding: 2rem 1rem; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="result-wrap">
+    <div id="loading" class="result-card state"><p class="muted">Loading your result card…</p></div>
+    <div id="error" class="result-card state" style="display:none;"></div>
+    <div id="card" class="result-card" style="display:none;">
+      <img src="qrs-logo.png" alt="QRS" style="height:40px;width:auto;background:#fff;border-radius:8px;padding:4px 8px;">
+      <h1 id="candName">Candidate</h1>
+      <p class="muted" id="roleLine">—</p>
+      <div class="score-big" id="scoreBig">—</div>
+      <p class="muted">Total marks</p>
+      <div class="strength" id="strengthBadge">—</div>
+      <div class="grid">
+        <div class="cell"><div class="lab">Flags</div><div class="val" id="flagsVal">0</div></div>
+        <div class="cell"><div class="lab">Time taken</div><div class="val" id="timeVal">—</div></div>
+        <div class="cell"><div class="lab">Started</div><div class="val" id="startVal" style="font-size:0.85rem;">—</div></div>
+        <div class="cell"><div class="lab">Finished</div><div class="val" id="finishVal" style="font-size:0.85rem;">—</div></div>
+      </div>
+      <div class="timer-bar" id="linkTimer">This result link is time-limited.</div>
+      <div id="hrReplyBox" style="display:none;margin-top:1.15rem;text-align:left;padding:0.85rem 1rem;background:#f0fdf4;border:1px solid #86efac;border-radius:12px;">
+        <div style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#047857;margin-bottom:0.35rem;">Message from HR</div>
+        <div id="hrReplyText" style="font-family:Georgia,Times New Roman,serif;font-size:0.98rem;line-height:1.65;color:#14532d;white-space:pre-wrap;"></div>
+      </div>
+      <p class="muted" style="margin-top:1.25rem;font-size:0.82rem;">HR has reviewed your assessment. For next steps, your recruiter will contact you.</p>
+    </div>
+  </div>
+  <script>
+    const DEFAULT_BACKEND = (location.origin && location.protocol !== 'file:')
+      ? location.origin.replace(/\/$/, '')
+      : 'https://qrs-assessment-l7gp.onrender.com';
+    function backendBase() {
+      try {
+        const s = localStorage.getItem('qrs_backend_base');
+        if (s && s.trim()) return s.trim().replace(/\/$/, '');
+      } catch (e) {}
+      return DEFAULT_BACKEND;
+    }
+    function fmt(ts) {
+      if (!ts) return '—';
+      try { return new Date(ts).toLocaleString(); } catch (e) { return '—'; }
+    }
+    function updateCountdown(expiresAt) {
+      const el = document.getElementById('linkTimer');
+      if (!el || !expiresAt) return;
+      function tick() {
+        const end = new Date(expiresAt).getTime();
+        const left = end - Date.now();
+        if (isNaN(end) || left <= 0) {
+          el.textContent = 'This result link has expired.';
+          el.style.background = '#fef2f2';
+          el.style.borderColor = '#fecaca';
+          return;
+        }
+        const h = Math.floor(left / 3600000);
+        const m = Math.floor((left % 3600000) / 60000);
+        const s = Math.floor((left % 60000) / 1000);
+        el.textContent = 'Link expires in ' + h + 'h ' + m + 'm ' + s + 's (shown after HR review)';
+      }
+      tick();
+      setInterval(tick, 1000);
+    }
+    async function load() {
+      const params = new URLSearchParams(location.search);
+      const id = params.get('id');
+      const token = params.get('token');
+      const loading = document.getElementById('loading');
+      const err = document.getElementById('error');
+      const card = document.getElementById('card');
+      if (!id || !token) {
+        loading.style.display = 'none';
+        err.style.display = 'block';
+        err.innerHTML = '<h2 style="color:#dc2626;margin:0 0 0.5rem;">Invalid link</h2><p class="muted">Please use the result link shared by HR.</p>';
+        return;
+      }
+      try {
+        const res = await fetch(backendBase() + '/api/result-card/' + encodeURIComponent(id) + '?token=' + encodeURIComponent(token));
+        const data = await res.json().catch(function() { return {}; });
+        loading.style.display = 'none';
+        if (!res.ok || !data.ok) {
+          err.style.display = 'block';
+          let title = 'Result not available';
+          if (data.expired) title = 'Link expired';
+          else if (data.pending) title = 'Under review';
+          err.innerHTML = '<h2 style="color:#d97706;margin:0 0 0.5rem;">' + title + '</h2><p class="muted">' +
+            (data.error || 'Please wait for HR to review, or request a new link.') + '</p>';
+          return;
+        }
+        card.style.display = 'block';
+        document.getElementById('candName').textContent = data.name || 'Candidate';
+        document.getElementById('roleLine').textContent =
+          ((data.role || '') + ' · ' + (data.level || '')).replace(/_/g, ' ');
+        document.getElementById('scoreBig').textContent =
+          (data.score != null ? data.score : '—') + ' / 100';
+        document.getElementById('flagsVal').textContent = String(data.flagsCount != null ? data.flagsCount : 0);
+        document.getElementById('timeVal').textContent =
+          data.timeTakenMinutes != null ? (data.timeTakenMinutes + ' min') : '—';
+        document.getElementById('startVal').textContent = fmt(data.startedAt);
+        document.getElementById('finishVal').textContent = fmt(data.finishedAt);
+        document.getElementById('strengthBadge').textContent = 'Performance: ' + (data.strength || '—');
+        updateCountdown(data.expiresAt);
+        if (data.hrReply) {
+          const rb = document.getElementById('hrReplyBox');
+          const rt = document.getElementById('hrReplyText');
+          if (rb && rt) {
+            rt.textContent = data.hrReply;
+            rb.style.display = 'block';
+          }
+        }
+      } catch (e) {
+        loading.style.display = 'none';
+        err.style.display = 'block';
+        err.innerHTML = '<h2 style="color:#dc2626;">Could not load</h2><p class="muted">Check your connection and try again.</p>';
+      }
+    }
+    load();
+  </script>
+</body>
+</html>

@@ -901,6 +901,93 @@ def send_link_email(aid):
     return jsonify({"ok": False, "error": err}), 500
 
 
+def build_result_card_email_html(a, total, pass_mark=60):
+    """Professional result summary for the candidate (no internal HR notes)."""
+    name = a.get("name") or "Candidate"
+    role = (a.get("role") or "—").replace("_", " ").title()
+    level = (a.get("level") or "—").title()
+    status = a.get("status") or "—"
+    mcq = a.get("score")
+    final = a.get("finalScore")
+    score_show = total if total is not None else (final if final is not None else mcq)
+    try:
+        score_show = int(score_show) if score_show is not None and score_show != "" else None
+    except Exception:
+        score_show = None
+    result_label = ""
+    if score_show is not None:
+        result_label = "Pass" if score_show >= pass_mark else "Under review"
+    completed = a.get("completedAt") or ""
+    try:
+        if completed:
+            from datetime import datetime
+            completed = datetime.fromisoformat(str(completed).replace("Z", "+00:00")).strftime("%d %b %Y, %I:%M %p")
+    except Exception:
+        pass
+    score_html = f"<div style='font-size:2rem;font-weight:700;color:#4f46e5;margin:0.5rem 0;'>{score_show} / 100</div>" if score_show is not None else "<div style='color:#64748b;margin:0.5rem 0;'>Score will be shared after review</div>"
+    result_html = f"<p style='margin:0.25rem 0;font-size:0.95rem;'><strong>Outcome:</strong> {result_label}</p>" if result_label else ""
+    return f"""
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#0f172a;">
+      <div style="background:#0f172a;padding:1.2rem 1.5rem;border-radius:12px 12px 0 0;">
+        <span style="color:#fff;font-weight:700;font-size:1.05rem;">QRS Solutions — Assessment Result</span>
+      </div>
+      <div style="border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;padding:1.5rem;">
+        <p>Hi {name},</p>
+        <p>Thank you for completing the <strong>QRS second-round assessment</strong>.</p>
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:1rem 1.15rem;margin:1rem 0;">
+          <div style="font-size:0.8rem;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;font-weight:700;">Result card</div>
+          {score_html}
+          <p style="margin:0.25rem 0;font-size:0.95rem;"><strong>Role:</strong> {role} · {level}</p>
+          <p style="margin:0.25rem 0;font-size:0.95rem;"><strong>Status:</strong> {status}</p>
+          {result_html}
+          <p style="margin:0.25rem 0;font-size:0.9rem;color:#64748b;">Completed: {completed or "—"}</p>
+        </div>
+        <p>Our team will contact you regarding the next steps. If you have questions, please reply to your recruiter.</p>
+        <p style="margin-top:1.2rem;">Best regards,<br><strong>QRS Recruitment Team</strong></p>
+        <p style="font-size:0.8rem;color:#94a3b8;margin-top:1rem;">This is an automated message from the QRS Assessment Portal.</p>
+      </div>
+    </div>
+    """
+
+
+@app.route("/api/assessments/<aid>/send-result", methods=["POST"])
+@require_admin
+def send_result_email(aid):
+    """Email a candidate their result card. Uses free SMTP if configured (e.g. Gmail App Password)."""
+    body = request.get_json(force=True) or {}
+    a = get_one_assessment(aid)
+    if not a:
+        return jsonify({"ok": False, "error": "Not found"}), 404
+    to_email = body.get("email") or a.get("email")
+    if not to_email or "@" not in str(to_email):
+        return jsonify({"ok": False, "error": "Candidate has no email on file"}), 400
+    # Prefer final score, else MCQ + coding + voice style total from client if provided
+    total = body.get("totalScore")
+    if total is None:
+        if a.get("finalScore") is not None and a.get("finalScore") != "":
+            total = a.get("finalScore")
+        else:
+            total = a.get("score")
+    try:
+        pass_mark = int(body.get("passMark") or 60)
+    except Exception:
+        pass_mark = 60
+    subject = body.get("subject") or f"Your QRS Assessment Result — {a.get('name') or 'Candidate'}"
+    html = build_result_card_email_html(a, total, pass_mark=pass_mark)
+    if not EMAIL_CONFIGURED:
+        return jsonify({
+            "ok": False,
+            "error": "Email not configured. Set SMTP_HOST, SMTP_USER, SMTP_PASS on Render (free Gmail App Password works).",
+            "email_configured": False,
+            "mailto_subject": subject,
+            "mailto_hint": True,
+        }), 503
+    ok, err = send_email(to_email, subject, html)
+    if ok:
+        return jsonify({"ok": True, "to": to_email})
+    return jsonify({"ok": False, "error": err}), 500
+
+
 # ---------- Routes ----------
 @app.route("/")
 def index():
@@ -915,6 +1002,136 @@ def admin_page():
 @app.route("/test.html")
 def test_page():
     return send_from_directory(BASE, "test.html")
+
+
+@app.route("/result.html")
+def result_page():
+    return send_from_directory(BASE, "result.html")
+
+
+@app.route("/api/assessments/<aid>/result-card", methods=["POST"])
+@require_admin
+def create_result_card_link(aid):
+    """HR generates a candidate-facing result card link (valid 5 hours). Reveals only after review."""
+    body = request.get_json(force=True) or {}
+    a = get_one_assessment(aid)
+    if not a:
+        return jsonify({"ok": False, "error": "Not found"}), 404
+    # Require HR review before reveal
+    has_final = a.get("finalScore") is not None and a.get("finalScore") != ""
+    force = bool(body.get("force"))
+    if not has_final and not force:
+        return jsonify({
+            "ok": False,
+            "error": "Save a final score in the Review panel first — then the result card can be revealed to the candidate.",
+        }), 400
+    from datetime import timedelta
+    hours = 5
+    try:
+        hours = int(body.get("hours") or 5)
+    except Exception:
+        hours = 5
+    hours = max(1, min(48, hours))
+    token = secrets.token_urlsafe(16)
+    now = datetime.utcnow()
+    expires = now + timedelta(hours=hours)
+    patch = {
+        "resultCardToken": token,
+        "resultCardCreatedAt": now.isoformat() + "Z",
+        "resultCardExpiresAt": expires.isoformat() + "Z",
+        "resultCardRevealed": True,
+        "resultCardHours": hours,
+    }
+    saved = upsert_assessment(aid, patch, merge_existing=True)
+    return jsonify({
+        "ok": True,
+        "id": aid,
+        "token": token,
+        "expiresAt": patch["resultCardExpiresAt"],
+        "hours": hours,
+        "revealed": True,
+    })
+
+
+@app.route("/api/result-card/<aid>", methods=["GET"])
+def public_result_card(aid):
+    """Public candidate view — limited fields only. Requires result card token."""
+    token = (request.args.get("token") or "").strip()
+    a = get_one_assessment(aid)
+    if not a:
+        return jsonify({"ok": False, "error": "Not found"}), 404
+    if not token or token != (a.get("resultCardToken") or ""):
+        return jsonify({"ok": False, "error": "Invalid or missing result card link"}), 401
+    # Expiry check
+    exp = parse_iso_utc_naive(a.get("resultCardExpiresAt"))
+    if exp and datetime.utcnow() > exp:
+        return jsonify({
+            "ok": False,
+            "error": "This result card link has expired (valid for a limited time after HR review).",
+            "expired": True,
+        }), 410
+    if not a.get("resultCardRevealed"):
+        return jsonify({
+            "ok": False,
+            "error": "Your result is not available yet. HR is still reviewing your assessment.",
+            "pending": True,
+        }), 403
+
+    # Score: prefer final
+    score = a.get("finalScore")
+    if score is None or score == "":
+        score = a.get("score")
+    try:
+        score = int(score) if score is not None and score != "" else None
+    except Exception:
+        score = None
+
+    # Time taken
+    started = parse_iso_utc_naive(a.get("startedAt"))
+    completed = parse_iso_utc_naive(a.get("completedAt"))
+    minutes = None
+    if started and completed and completed > started:
+        minutes = int(round((completed - started).total_seconds() / 60.0))
+
+    flags_count = len(a.get("flags") or [])
+
+    # Strength from coding effort or score bands
+    strength = a.get("codingEffort") or ""
+    if not strength and score is not None:
+        if score >= 80:
+            strength = "Strong"
+        elif score >= 60:
+            strength = "Good"
+        elif score >= 40:
+            strength = "Developing"
+        else:
+            strength = "Needs improvement"
+    if not strength:
+        strength = "Under review"
+
+    # Never expose internal notes, answers, photos, flag reasons
+    hr_reply = ""
+    if a.get("hrReplyShareOnCard") and a.get("hrReplyToNote"):
+        hr_reply = str(a.get("hrReplyToNote") or "")[:2000]
+    payload = {
+        "ok": True,
+        "name": a.get("name") or "Candidate",
+        "role": a.get("role") or "",
+        "level": a.get("level") or "",
+        "status": a.get("status") or "",
+        "score": score,
+        "flagsCount": flags_count,
+        "timeTakenMinutes": minutes,
+        "startedAt": a.get("startedAt"),
+        "finishedAt": a.get("completedAt"),
+        "strength": strength,
+        "expiresAt": a.get("resultCardExpiresAt"),
+        "revealed": True,
+        "hrReply": hr_reply,  # only if HR opted to share on card
+    }
+    return jsonify(payload)
+
+
 
 
 @app.route("/api/health")
