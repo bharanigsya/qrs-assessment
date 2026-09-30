@@ -1,0 +1,49 @@
+QRS 2nd Round Assessment - HOW TO START
+========================================
+
+ADMIN LOGIN
+  Username : admin
+  Password : qrs@2026
+
+----------------------------------------
+A) TEST ON YOUR OWN PC ONLY (localhost)
+----------------------------------------
+1. Extract this folder
+2. Open terminal in this folder
+3. pip install -r requirements.txt
+4. python backend.py
+5. Open:  http://localhost:5000
+6. Admin: http://localhost:5000/admin.html
+
+IMPORTANT:
+  Links like http://localhost:5000/test.html?... 
+  work ONLY on the same computer.
+  Candidates on other phones/PCs cannot open localhost.
+
+----------------------------------------
+B) SHARE LINKS WITH CANDIDATES (FREE PUBLIC URL)
+----------------------------------------
+Deploy the backend for FREE on Koyeb (recommended — no sleep, ~100GB/month
+free bandwidth vs Render's 5GB). Full steps: see KOYEB-DEPLOY.txt
+
+Quick version:
+1. Create free account at https://www.koyeb.com (no card needed)
+2. Create Web Service → connect this project's GitHub repo
+3. Builder: Buildpack (default) — it reads Procfile automatically
+4. Deploy → you get a URL like:
+   https://qrs-assessment-yourname.koyeb.app
+5. Open that URL for Admin
+6. Generated candidate links will look like:
+   https://qrs-assessment-yourname.koyeb.app/test.html?id=...&token=...
+   These work for ANY candidate on any device.
+
+(Render.com works the same way if you prefer it — see RENDER-DEPLOY.txt —
+but its free tier's bandwidth limit is easy to hit once candidates start
+uploading photos/video.)
+
+----------------------------------------
+TROUBLESHOOTING "can't reach this page"
+----------------------------------------
+- Server not running → start with: python backend.py
+- Using localhost on another device → use your Koyeb (or Render) public URL instead
+- Wrong port → use http://localhost:5000 (not 8080) when using backend.py

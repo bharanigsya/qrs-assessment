@@ -1,0 +1,93 @@
+QRS Assessment — Deploy FREE on Koyeb (public links for candidates)
+=====================================================================
+
+WHY MOVE FROM RENDER: Render's free Hobby workspace only includes 5 GB of
+bandwidth a month. This app serves candidate photos, screen-recording video
+and chat attachments, so that limit gets hit fast. Koyeb's free tier gives
+you about 100 GB/month, doesn't sleep after 15 idle minutes, and needs no
+credit card.
+
+STEP 1 — Create free account
+  Go to: https://www.koyeb.com
+  Sign up with GitHub / Google / email (free, no card required)
+
+STEP 2 — Push this project to GitHub
+  (Skip this if it's already on GitHub from your Render setup — Koyeb can
+  use the same repository.)
+  1. Create a new GitHub repository (public or private)
+  2. Upload the whole assessment-platform folder contents, including:
+     - backend.py, requirements.txt, Procfile   (all already set up below)
+     - admin.html, test.html, result.html, index.html
+     - questions.js, styles.css, qrs-logo.png
+
+STEP 3 — Create the Koyeb service
+  1. Koyeb Dashboard → "Create Web Service"
+  2. Choose "GitHub" as the source, connect your account, select this repo
+  3. Branch: main (or master)
+  4. Builder: leave it on "Buildpack" (the default) — it auto-detects Python
+     from requirements.txt and reads the Procfile automatically. You do NOT
+     need a Dockerfile.
+  5. Exposed port: 8000
+     (The Procfile binds to Koyeb's own $PORT automatically — 8000 is just
+     the port Koyeb tells your app to use, so leave this at the default.)
+  6. Instance type: Free
+  7. Click "Deploy"
+
+STEP 4 — Wait for the build (1–3 minutes)
+  When the service shows "Healthy", you get a URL like:
+     https://qrs-assessment-yourname.koyeb.app
+
+STEP 5 — Use the platform
+  Admin:      https://YOUR-APP.koyeb.app/admin.html
+  Login:      admin  /  qrs@2026
+  Candidates: links generated from admin will use YOUR-APP.koyeb.app
+              (works on any phone / laptop)
+
+  Note: admin.html, test.html and result.html all detect their own origin
+  automatically (location.origin), so once the app is served by Koyeb,
+  candidate links are correct with no extra config. The hardcoded
+  "https://YOUR-APP.koyeb.app" fallback in test.html/admin.html/result.html
+  is only used if someone double-clicks a file locally instead of opening
+  it through the deployed site — replace it with your real Koyeb URL if
+  you want that fallback to be accurate too (not required for normal use).
+
+WHAT CHANGED FROM THE RENDER SETUP
+  - Procfile now reads:
+      web: gunicorn backend:app --bind 0.0.0.0:$PORT --workers=2 --threads=4 --timeout=60
+    The "--bind 0.0.0.0:$PORT" part is required by Koyeb (Render happened to
+    work without it, but Koyeb will not start your service correctly if the
+    app isn't explicitly bound to the port it assigns).
+  - Nothing else changed. requirements.txt, backend.py, and every .html file
+    are unchanged except for a placeholder URL cleanup (see below).
+
+ENVIRONMENT VARIABLES (set these in Koyeb → your service → Environment)
+  SECRET_KEY     = <any long random string>   (signs admin login tokens)
+  DATABASE_URL   = <your Supabase/Neon connection string, if using one>
+                    (see SUPABASE-SETUP.txt — same steps, just add the
+                    variable on Koyeb instead of Render)
+  SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS   (optional, for auto-emailing
+                    candidate links/results — same as before)
+
+  Without DATABASE_URL, the app stores candidates in a local JSON file on
+  the instance disk — fine for testing, but that disk is NOT persistent
+  across redeploys on Koyeb either, same caveat as Render's free tier. Use
+  Supabase or Neon's free Postgres for anything you need to keep.
+
+TROUBLESHOOT IF THE BUILD OR DEPLOY FAILS
+  - "Application exited": check the Procfile has --bind 0.0.0.0:$PORT
+    exactly as above — this is the #1 cause of a Koyeb Python service
+    failing its health check.
+  - Build fails installing psycopg2-binary: make sure you're on the
+    Buildpack builder (not Dockerfile) — Koyeb's Python buildpack includes
+    the system libraries it needs.
+  - 404 on every page: confirm the repo root (the folder Koyeb builds from)
+    contains backend.py directly, not inside a subfolder.
+  - Still stuck: Koyeb → your service → "Runtime logs" shows the exact
+    gunicorn/Python error.
+
+SECURITY REMINDERS (same as before, still apply here)
+  1. Set SECRET_KEY as above.
+  2. Change the default passwords after first login (Admin → Settings).
+  3. backend.py still serves ONLY index/admin/test/result .html, questions.js,
+     styles.css and qrs-logo.png — everything else (backend.py itself,
+     data/, .env, etc.) returns 404 regardless of which host runs it.
