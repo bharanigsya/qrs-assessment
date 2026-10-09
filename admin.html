@@ -438,12 +438,27 @@
           </button>
         </div>
         <div id="backupReminder" class="alert alert-warning" style="display:none;margin-bottom:1rem;"></div>
+        <div id="storageMeterCard" class="card" style="border:1px solid #7dd3fc;background:linear-gradient(135deg,#f0f9ff,#f8fafc);margin-bottom:1rem;padding:1rem 1.15rem;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.75rem;flex-wrap:wrap;">
+            <div>
+              <h2 class="card-title" style="margin:0 0 0.35rem;font-size:1rem;">💾 Media storage</h2>
+              <div id="storageMeterText" style="font-size:0.9rem;color:#334155;">Calculating…</div>
+              <div id="storageMeterBar" style="margin-top:0.55rem;height:8px;background:#e2e8f0;border-radius:999px;overflow:hidden;max-width:420px;">
+                <div id="storageMeterFill" style="height:100%;width:0%;background:linear-gradient(90deg,#0ea5e9,#6366f1);border-radius:999px;transition:width 0.3s;"></div>
+              </div>
+            </div>
+            <div style="display:flex;gap:0.45rem;flex-wrap:wrap;">
+              <button class="btn btn-outline" style="padding:0.4rem 0.75rem;font-size:0.82rem;" onclick="downloadAllMediaThenClear()">💾 Download all → clear</button>
+              <button class="btn btn-outline" style="padding:0.4rem 0.75rem;font-size:0.82rem;" onclick="cleanupOldMedia(7)">🧹 Clear &gt;7 days</button>
+            </div>
+          </div>
+        </div>
         <div style="display:flex;gap:0.6rem;flex-wrap:wrap;margin-bottom:1rem;">
           <button class="btn btn-outline" onclick="downloadBackup()">⬇ Download Backup JSON</button>
           <button class="btn btn-primary" onclick="restoreLocalToBackend()">⬆ Restore browser → server</button>
           <button class="btn btn-outline" onclick="exportCSV()">Export CSV</button>
           <button class="btn btn-outline" onclick="cleanupOldMedia(7)" title="Clear photos/videos older than 7 days">🧹 Clear media &gt;7 days</button>
-          <button class="btn btn-outline" onclick="downloadAllMediaThenClear()" title="Save all photos/videos to your PC, then delete from Supabase">💾 Download all media → clear server</button>
+          <button class="btn btn-outline" onclick="downloadAllMediaThenClear()" title="Save all photos/videos to your PC, then delete from server">💾 Download all media → clear server</button>
         </div>
         <div class="card" style="border:1px solid #fca5a5;background:#fef2f2;margin-bottom:1rem;">
           <h2 class="card-title" style="color:#991b1b;">⚡ Needs action</h2>
@@ -496,14 +511,33 @@
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.6rem;">
             <div>
               <h2 class="card-title" style="margin-bottom:0.2rem;">🟢 Live Monitoring</h2>
-              <p style="font-size:0.85rem;color:var(--muted);margin:0;">Candidates currently taking the test. Refreshes automatically every 8 seconds.</p>
+              <p style="font-size:0.85rem;color:var(--muted);margin:0;">Candidates currently taking the test. Refreshes every 8 seconds. New photos flash yellow; flags show red border.</p>
             </div>
-            <span id="liveCount" class="badge" style="background:#d1fae5;color:#065f46;font-size:0.85rem;padding:0.35rem 0.8rem;">0 live</span>
+            <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
+              <label style="font-size:0.82rem;display:flex;align-items:center;gap:0.35rem;cursor:pointer;">
+                <input type="checkbox" id="liveWallMode" onchange="toggleLiveWallMode()" style="width:auto;"> Wall view
+              </label>
+              <span id="liveCount" class="badge" style="background:#d1fae5;color:#065f46;font-size:0.85rem;padding:0.35rem 0.8rem;">0 live</span>
+              <span id="breakRequestBadge" style="display:none;background:#fef3c7;color:#b45309;font-size:0.78rem;font-weight:700;padding:0.3rem 0.65rem;border-radius:999px;">☕ Break requests</span>
+            </div>
           </div>
         </div>
+        <div id="liveBreakRequests" style="display:none;margin-top:0.75rem;" class="card"></div>
         <div id="liveMonitorGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1rem;margin-top:1rem;">
           <p style="color:#64748b;font-size:0.9rem;">No candidates currently in progress.</p>
         </div>
+        <style>
+          #liveMonitorGrid.wall-mode { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)) !important; gap: 0.65rem !important; }
+          #liveMonitorGrid.wall-mode .live-card img { height: 200px !important; }
+          #liveMonitorGrid.wall-mode .live-card-body { padding: 0.5rem 0.6rem !important; }
+          @keyframes livePhotoFlash {
+            0% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.9); }
+            40% { box-shadow: 0 0 0 6px rgba(250, 204, 21, 0.55); }
+            100% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0); }
+          }
+          .live-card.photo-fresh { animation: livePhotoFlash 1.6s ease-out 2; border-color: #facc15 !important; }
+          .live-card.flagged-live { border-color: #ef4444 !important; border-width: 2px !important; }
+        </style>
       </div>
 
 
@@ -599,9 +633,9 @@
           </div>
           <label style="display:flex;align-items:center;gap:0.5rem;margin-top:0.65rem;font-size:0.88rem;font-weight:500;cursor:pointer;">
             <input type="checkbox" id="storePhotos" checked style="width:auto;">
-            📷 Store proctor photos (1 photo every 1 minute)
+            📷 Store proctor media (photo every 30s + 30s video with mic every 2 min)
           </label>
-          <small style="display:block;color:var(--muted);margin:0.25rem 0 0 1.6rem;font-size:0.8rem;">Uncheck to save bandwidth — scores & answers still save; no face photos stored.</small>
+          <small style="display:block;color:var(--muted);margin:0.25rem 0 0 1.6rem;font-size:0.8rem;">Mandatory when checked: face photo every 30 seconds; 30-second video with microphone every 2 minutes. Extra photo on each flag.</small>
 
           <div style="margin-top:1rem;display:flex;gap:0.75rem;flex-wrap:wrap;">
             <button class="btn btn-primary" onclick="createAssessment()">Generate Secure Link (100 Marks)</button>
@@ -638,16 +672,24 @@
           <p style="font-size:0.88rem;color:var(--muted);margin-bottom:0.8rem;">
             One candidate per line, comma-separated:<br>
             <code style="background:#f1f5f9;padding:0.15rem 0.4rem;border-radius:4px;">Name, Email, Mobile, Role, Level, Duration(min), Available From, Link Valid(hrs)</code><br>
-            Bulk invites default to <strong>laptop only</strong>. Role values: salesforce, pc, integration, testing, database, infra, wordpress, hr, finance, data_analytics (Data Analyst) &nbsp;•&nbsp;
+            Role values: salesforce, pc, integration, testing, database, infra, wordpress, hr, finance, data_analytics (Data Analyst) &nbsp;•&nbsp;
             Level values: fresher, intern, experienced, pro (pro = 2+ years of experience)<br>
             The last 3 columns are optional — leave blank for default duration, immediate availability, and a 24-hour link. Dates use <code style="background:#f1f5f9;padding:0.1rem 0.3rem;border-radius:4px;">YYYY-MM-DDTHH:MM</code> (e.g. 2026-09-15T10:00).
           </p>
           <textarea id="bulkInput" class="code-area" style="min-height:160px;background:#fff;color:#0f172a;font-family:'Fira Code',monospace;font-size:0.85rem;" placeholder="Priya Sharma, priya@email.com, 9876543210, salesforce, fresher
 Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48"></textarea>
-          <div style="margin-top:0.9rem;">
-            <label style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.7rem;font-size:0.88rem;font-weight:500;cursor:pointer;">
+          <div style="margin-top:0.9rem;display:flex;flex-wrap:wrap;gap:0.85rem;align-items:flex-end;">
+            <div class="form-group" style="margin:0;min-width:220px;">
+              <label for="bulkDeviceMode">Allowed device for this batch</label>
+              <select id="bulkDeviceMode" style="max-width:280px;">
+                <option value="laptop" selected>Laptop / Desktop only</option>
+                <option value="mobile">Mobile only</option>
+                <option value="both">Laptop or Mobile</option>
+              </select>
+            </div>
+            <label style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.35rem;font-size:0.88rem;font-weight:500;cursor:pointer;">
               <input type="checkbox" id="autoEmailOnBulk" checked style="width:auto;">
-              📧 Automatically email each link to its candidate (no-reply style)
+              📧 Automatically email each link
             </label>
             <button class="btn btn-primary" onclick="bulkCreate()">Generate Links for All</button>
           </div>
@@ -901,6 +943,13 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
             <label>Pass Mark (out of 100)</label>
             <input type="number" id="passMark" min="1" max="100" value="60" style="max-width:120px;">
             <button class="btn btn-outline" style="margin-left:0.5rem;" onclick="savePassMark()">Save Pass Mark</button>
+          </div>
+          <div class="form-group" style="margin-top:1rem;">
+            <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-weight:600;">
+              <input type="checkbox" id="autoClearMedia7" style="width:auto;" onchange="saveAutoClearMediaPref()">
+              Auto-clear media after 7 days
+            </label>
+            <p style="font-size:0.82rem;color:#64748b;margin:0.35rem 0 0;">When on, completed tests older than 7 days lose photos/videos automatically (scores &amp; answers stay). Runs when you open admin.</p>
           </div>
           <hr style="margin:1.2rem 0;border:none;border-top:1px solid var(--border);">
           <div class="form-group">
@@ -1463,6 +1512,70 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       }
       switchTab('dashboard', document.querySelector('[data-tab=dashboard]'));
     }
+    function estimateMediaBytes(list) {
+      list = list || getAssessments();
+      let bytes = 0;
+      let photos = 0;
+      let videos = 0;
+      let candidates = 0;
+      list.forEach(function(a) {
+        let has = false;
+        if (a.lastPhoto) {
+          bytes += String(a.lastPhoto).length * 0.75;
+          photos += 1;
+          has = true;
+        }
+        (a.photoHistory || []).forEach(function(p) {
+          if (p && p.img) {
+            bytes += String(p.img).length * 0.75;
+            photos += 1;
+            has = true;
+          }
+        });
+        (a.videoHistory || []).forEach(function(v) {
+          if (v && v.video) {
+            bytes += String(v.video).length * 0.75;
+            videos += 1;
+            has = true;
+          } else if (v) {
+            videos += 1;
+            has = true;
+          }
+        });
+        if (has) candidates += 1;
+      });
+      return { bytes: bytes, photos: photos, videos: videos, candidates: candidates };
+    }
+
+    function formatBytes(n) {
+      if (!n || n < 1) return '0 B';
+      if (n < 1024) return Math.round(n) + ' B';
+      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+      if (n < 1024 * 1024 * 1024) return (n / (1024 * 1024)).toFixed(1) + ' MB';
+      return (n / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+    }
+
+    function updateStorageMeter() {
+      const textEl = document.getElementById('storageMeterText');
+      const fillEl = document.getElementById('storageMeterFill');
+      if (!textEl) return;
+      const est = estimateMediaBytes();
+      const softCapMb = 400; // soft reminder for local/Supabase free comfort
+      const mb = est.bytes / (1024 * 1024);
+      const pct = Math.min(100, Math.round((mb / softCapMb) * 100));
+      textEl.innerHTML =
+        '<strong>' + est.candidates + '</strong> candidate(s) with media · ' +
+        '<strong>' + est.photos + '</strong> photos · <strong>' + est.videos + '</strong> video clips · ' +
+        'about <strong>' + formatBytes(est.bytes) + '</strong> in browser cache' +
+        (est.candidates ? ' <span style="color:#b45309;">— download & clear after review</span>' : ' <span style="color:#059669;">— storage clear</span>');
+      if (fillEl) {
+        fillEl.style.width = pct + '%';
+        fillEl.style.background = pct > 80
+          ? 'linear-gradient(90deg,#dc2626,#f59e0b)'
+          : (pct > 50 ? 'linear-gradient(90deg,#f59e0b,#0ea5e9)' : 'linear-gradient(90deg,#0ea5e9,#6366f1)');
+      }
+    }
+
     function renderKpiStrip(list) {
       const el = document.getElementById('kpiStrip');
       if (!el) return;
@@ -1481,12 +1594,15 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       const completedToday = list.filter(function(a) { return a.status === 'completed' && isToday(a.completedAt); }).length;
       const flagged = list.filter(function(a) { return (a.flags && a.flags.length) || a.status === 'flagged'; }).length;
       const unread = list.filter(function(a) { return a.helpUnreadAdmin; }).length;
+      const mediaN = countCandidatesWithMedia();
       el.innerHTML =
         '<div class="kpi-card kpi-today"><div class="kpi-label">Today&apos;s tests</div><div class="kpi-value">' + todayTests + '</div></div>' +
         '<div class="kpi-card kpi-live"><div class="kpi-label">In progress</div><div class="kpi-value">' + inProg + '</div></div>' +
         '<div class="kpi-card"><div class="kpi-label">Completed today</div><div class="kpi-value">' + completedToday + '</div></div>' +
         '<div class="kpi-card kpi-flag"><div class="kpi-label">Flagged</div><div class="kpi-value">' + flagged + '</div></div>' +
-        '<div class="kpi-card kpi-chat"><div class="kpi-label">Unread chat</div><div class="kpi-value">' + unread + '</div></div>';
+        '<div class="kpi-card kpi-chat"><div class="kpi-label">Unread chat</div><div class="kpi-value">' + unread + '</div></div>' +
+        '<div class="kpi-card"><div class="kpi-label">With media</div><div class="kpi-value">' + mediaN + '</div></div>';
+      try { updateStorageMeter(); } catch (e) {}
     }
 
 
@@ -1659,7 +1775,9 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       if (!a) return b;
       if (!b) return a;
       const rank = (x) => {
-        if (x.status === 'completed') return 6;
+        if (!x) return 0;
+        // completedAt alone means finished even if status lagging
+        if (x.status === 'completed' || x.completedAt) return 6;
         // Flagged but already has score/answers after submit race — treat nearly as complete
         if (x.status === 'flagged' && (x.score != null || x.completedAt)) return 5;
         if (x.status === 'flagged') return 3;
@@ -1699,12 +1817,61 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
     // data from the server onto whichever record was chosen, regardless of that choice.
     function mergeLiveFields(chosen, remote) {
       if (!remote || chosen === remote) return chosen;
+      // STATUS: always adopt the more advanced status from server
+      // (local "pending" must never hide candidate "in-progress" / "completed")
+      const rank = function(st) {
+        if (st === 'completed') return 6;
+        // Flagged after submit race (has score/completedAt) is almost complete
+        if (st === 'flagged') return 3;
+        if (st === 'in-progress') return 2;
+        if (st === 'missed' || st === 'expired') return 1;
+        return 0; // pending
+      };
+      if (rank(remote.status) > rank(chosen.status)) {
+        chosen.status = remote.status;
+      }
+      // HARD: server finished → always show completed (fixes "candidate finished but admin stuck")
+      if (remote.status === 'completed' || remote.completedAt) {
+        chosen.status = 'completed';
+        if (remote.completedAt) chosen.completedAt = remote.completedAt;
+      }
+      // If server has started/completed timestamps, keep them
+      if (remote.startedAt && (!chosen.startedAt || remote.startedAt < chosen.startedAt)) {
+        chosen.startedAt = remote.startedAt;
+      }
+      if (remote.completedAt && !chosen.completedAt) {
+        chosen.completedAt = remote.completedAt;
+      }
+      // Answers / score from candidate device via server
+      // IMPORTANT: score 0 is a valid result — must still overwrite null/empty
+      const rAns = remote.answers && typeof remote.answers === 'object' ? Object.keys(remote.answers).length : 0;
+      const cAns = chosen.answers && typeof chosen.answers === 'object' ? Object.keys(chosen.answers).length : 0;
+      if (rAns > cAns) chosen.answers = remote.answers;
+      const remoteHasScore = remote.score != null && remote.score !== '';
+      const chosenHasScore = chosen.score != null && chosen.score !== '';
+      if (remoteHasScore && (!chosenHasScore || remote.status === 'completed' || Number(remote.score) >= Number(chosen.score || 0))) {
+        chosen.score = remote.score;
+        if (remote.mcqScore != null) chosen.mcqScore = remote.mcqScore;
+        if (remote.mcqCorrect != null) chosen.mcqCorrect = remote.mcqCorrect;
+        if (remote.mcqCount != null) chosen.mcqCount = remote.mcqCount;
+        if (remote.mcqTotal != null) chosen.mcqTotal = remote.mcqTotal;
+      }
+      // If server says in-progress/completed but local still pending, force status
+      if ((chosen.status === 'pending' || !chosen.status) && (remote.startedAt || remote.lastActivityAt || rAns > 0 || remote.lastPhoto || remote.completedAt || remoteHasScore)) {
+        if (remote.status === 'completed' || remote.completedAt) chosen.status = 'completed';
+        else if (remote.status === 'flagged') chosen.status = 'flagged';
+        else chosen.status = 'in-progress';
+      }
+
       const remotePhotoAt = remote.lastPhotoAt ? new Date(remote.lastPhotoAt).getTime() : 0;
       const chosenPhotoAt = chosen.lastPhotoAt ? new Date(chosen.lastPhotoAt).getTime() : 0;
       if (remotePhotoAt >= chosenPhotoAt) {
         chosen.lastPhoto = remote.lastPhoto;
         chosen.lastPhotoAt = remote.lastPhotoAt;
         if (remote.photoHistory && remote.photoHistory.length) chosen.photoHistory = remote.photoHistory;
+      }
+      if (remote.photoCount && (!chosen.photoCount || remote.photoCount > chosen.photoCount)) {
+        chosen.photoCount = remote.photoCount;
       }
       const remoteVidCount = (remote.videoHistory && remote.videoHistory.length) || 0;
       const chosenVidCount = (chosen.videoHistory && chosen.videoHistory.length) || 0;
@@ -1732,6 +1899,12 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       }
       if (remote.helpUnreadAdmin) chosen.helpUnreadAdmin = true;
       if (remote.helpUnreadCandidate) chosen.helpUnreadCandidate = true;
+      if (remote.candidateFeedback && !chosen.candidateFeedback) chosen.candidateFeedback = remote.candidateFeedback;
+      if (remote.breakRequest) chosen.breakRequest = remote.breakRequest;
+      // Event snapshots (start / flag / finish photos + page context)
+      const rSnap = remote.eventSnapshots || [];
+      const cSnap = chosen.eventSnapshots || [];
+      if (rSnap.length > cSnap.length) chosen.eventSnapshots = rSnap;
       return chosen;
     }
 
@@ -1778,10 +1951,22 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
               '<button class="btn btn-outline" style="padding:0.35rem 0.8rem;margin:0.25rem 0;" onclick="document.getElementById(\'dataLossWarning\').style.display=\'none\'">Dismiss</button></div>';
           }
           // Keep richer local data; push local → server once per session
+          // NEVER push local "pending" over a server record that already progressed
           if (!ssGet('qrs_auto_restore_tried')) {
             ssSet('qrs_auto_restore_tried', '1');
             for (const rec of local) {
               try {
+                const remoteMatch = remote.find(function(r) { return r.id === rec.id; });
+                if (remoteMatch) {
+                  const rs = remoteMatch.status || 'pending';
+                  const ls = rec.status || 'pending';
+                  // Skip if server is further along (candidate is testing / done)
+                  if ((rs === 'in-progress' || rs === 'flagged' || rs === 'completed') &&
+                      (ls === 'pending' || ls === 'missed' || ls === 'expired')) {
+                    continue;
+                  }
+                  if (rs === 'completed' && ls !== 'completed') continue;
+                }
                 const { photoHistory, videoHistory, ...payload } = rec;
                 await fetch(`${BACKEND_BASE}/api/assessments/${rec.id}`, {
                   method: 'PUT',
@@ -2492,7 +2677,18 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
     function computeMcqFromAnswers(a) {
       if (!a || !a.answers || typeof QUESTION_BANK === 'undefined') return null;
       try {
-        const bank = QUESTION_BANK[a.role] && QUESTION_BANK[a.role][a.level];
+        // Prefer shared getAssessment() so role/level aliases stay consistent
+        let bank = null;
+        if (typeof getAssessment === 'function') {
+          bank = getAssessment(a.role, a.level);
+        }
+        if (!bank) {
+          let role = String(a.role || '').toLowerCase().trim().replace(/\s+/g, '_').replace(/-/g, '_');
+          let level = String(a.level || '').toLowerCase().trim().replace(/\s+/g, '_').replace(/-/g, '_');
+          if (role === 'data_analyst' || role === 'dataanalytics' || role === 'analyst') role = 'data_analytics';
+          if (role === 'project_coordinator' || role === 'projectcoordinator') role = 'pc';
+          bank = QUESTION_BANK[role] && QUESTION_BANK[role][level];
+        }
         if (!bank || !bank.questions) return null;
         let score = 0, correct = 0, count = 0, marks = 0;
         bank.questions.forEach(function(q) {
@@ -2500,7 +2696,8 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
           count++;
           marks += (q.marks || 0);
           const ans = a.answers[q.id];
-          if (ans !== undefined && ans !== null && Number(ans) === Number(q.correct)) {
+          if (ans !== undefined && ans !== null && String(ans).trim() !== '' &&
+              Number(ans) === Number(q.correct)) {
             score += (q.marks || 0);
             correct++;
           }
@@ -2749,8 +2946,14 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
 
         const id = 'ASMT-' + Date.now().toString(36).toUpperCase() + '-' + i;
         const token = Math.random().toString(36).substring(2, 12);
+        const bulkDmEl = document.getElementById('bulkDeviceMode');
+        const bulkDm = (bulkDmEl && bulkDmEl.value === 'mobile') ? 'mobile'
+          : ((bulkDmEl && bulkDmEl.value === 'both') ? 'both' : 'laptop');
         const record = {
-          id, token, name, email, mobile: mobile || '', role: roleKey, level: levelKey, deviceMode: 'laptop', allowMobile: false, storePhotos: true,
+          id, token, name, email, mobile: mobile || '', role: roleKey, level: levelKey,
+          deviceMode: bulkDm,
+          allowMobile: bulkDm !== 'laptop',
+          storePhotos: true,
           duration, defaultDuration: assessmentData.duration, extraMinutes: 0,
           scheduledAt, linkValidityHours, linkValidFrom, expiresAt,
           totalMarks: 100, status: 'pending',
@@ -3300,10 +3503,12 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
           (a.status === 'in-progress' || a.status === 'flagged' ? '<button type="button" onclick="closeAllMenus(); extendTime(\'' + a.id + '\')">⏱ Add +10 min exam</button>' : '') +
           (a.flags && a.flags.length ? '<button type="button" onclick="closeAllMenus(); freeCandidate(\'' + a.id + '\')">🔓 Free candidate</button>' : '') +
           '<div class="sep"></div>' +
+          '<button type="button" onclick="closeAllMenus(); copyCandidateSummary(\'' + a.id + '\')">📋 Copy summary</button>' +
           '<button type="button" onclick="closeAllMenus(); printReport(\'' + a.id + '\')">📄 Print report</button>' +
           '<button type="button" onclick="closeAllMenus(); printResultCard(\'' + a.id + '\')">🪪 Print result card</button>' +
           '<button type="button" onclick="closeAllMenus(); sendResultCardEmail(\'' + a.id + '\')">📧 Email result card</button>' +
           '<button type="button" onclick="closeAllMenus(); createResultCardLink(\'' + a.id + '\')">🪪 Result card link (5h)</button>' +
+          (isAdmin() ? '<button type="button" onclick="closeAllMenus(); downloadCandidateMediaToDevice(\'' + a.id + '\', false)">💾 Download media only</button>' : '') +
           (isAdmin() ? '<button type="button" onclick="closeAllMenus(); downloadCandidateMediaToDevice(\'' + a.id + '\', true)">💾 Download media → clear server</button>' : '') +
           (isAdmin() ? '<div class="sep"></div><button type="button" class="danger" onclick="closeAllMenus(); deleteCandidate(\'' + a.id + '\')">🗑 Delete candidate</button>' : '') +
         '</div></div></td></tr>'
@@ -3648,6 +3853,63 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       refreshAll();
     }
 
+    function printScoreCard(id) {
+      const a = getAssessments().find(x => x.id === id);
+      if (!a) return alert('Candidate not found');
+      const pass = typeof getPassMark === 'function' ? getPassMark() : 60;
+      const total = typeof totalScore === 'function' ? totalScore(a) : (a.score != null ? Number(a.score) : 0);
+      let result = 'PENDING';
+      if (a.status === 'completed' || a.completedAt) {
+        result = total >= pass ? 'PASS' : 'FAIL';
+      }
+      let mins = '—';
+      try {
+        if (a.startedAt && a.completedAt) {
+          const sec = Math.round((new Date(a.completedAt) - new Date(a.startedAt)) / 1000);
+          if (sec > 0) mins = Math.floor(sec / 60) + ' min ' + (sec % 60) + ' sec';
+        }
+      } catch (e) {}
+      const flags = (a.flags && a.flags.length) ? a.flags.length : 0;
+      const w = window.open('', '_blank', 'noopener,noreferrer');
+      if (!w) return alert('Pop-up blocked. Allow pop-ups for this site.');
+      const esc = function(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;'); };
+      const badgeBg = result === 'PASS' ? '#d1fae5' : (result === 'FAIL' ? '#fee2e2' : '#fef3c7');
+      const badgeFg = result === 'PASS' ? '#065f46' : (result === 'FAIL' ? '#991b1b' : '#92400e');
+      w.document.open();
+      w.document.write('<!DOCTYPE html><html><head><title>Score Card - ' + esc(a.name) + '</title><style>' +
+        'body{font-family:Inter,system-ui,sans-serif;background:#f1f5f9;padding:1.5rem;color:#0f172a;}' +
+        '.card{max-width:480px;margin:0 auto;background:#fff;border-radius:16px;border:1px solid #e2e8f0;padding:1.75rem;box-shadow:0 8px 30px rgba(15,23,42,0.08);}' +
+        '.logo{height:48px;margin-bottom:0.75rem;} h1{font-size:1.2rem;margin:0.25rem 0;} .muted{color:#64748b;font-size:0.9rem;}' +
+        '.score{font-size:2.75rem;font-weight:800;color:#4f46e5;margin:0.75rem 0 0.15rem;line-height:1;}' +
+        '.badge{display:inline-block;margin-top:0.65rem;padding:0.4rem 0.95rem;border-radius:999px;font-weight:700;font-size:0.95rem;background:' + badgeBg + ';color:' + badgeFg + ';}' +
+        '.grid{display:grid;grid-template-columns:1fr 1fr;gap:0.65rem;margin-top:1.25rem;text-align:left;}' +
+        '.cell{background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:0.7rem 0.85rem;}' +
+        '.lab{font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#94a3b8;}' +
+        '.val{font-size:1rem;font-weight:700;margin-top:0.2rem;}' +
+        '@media print{body{background:#fff;padding:0;} .card{box-shadow:none;border:1px solid #ccc;} .no-print{display:none;}}' +
+        '</style></head><body><div class="card">' +
+        '<img class="logo" src="qrs-logo.png" alt="QRS">' +
+        '<h1>' + esc(a.name) + '</h1>' +
+        '<p class="muted">' + esc((a.role || '') + ' · ' + (a.level || '')).replace(/_/g,' ') + '</p>' +
+        '<div class="score">' + (a.score != null && a.score !== '' ? total : '—') + ' / 100</div>' +
+        '<p class="muted">Total score</p>' +
+        '<div class="badge">' + result + (result !== 'PENDING' ? ' (pass mark ' + pass + ')' : '') + '</div>' +
+        '<div class="grid">' +
+        '<div class="cell"><div class="lab">MCQ</div><div class="val">' + (a.mcqScore != null ? a.mcqScore : (a.score != null ? a.score : '—')) + '</div></div>' +
+        '<div class="cell"><div class="lab">Flags</div><div class="val">' + flags + '</div></div>' +
+        '<div class="cell"><div class="lab">Time taken</div><div class="val">' + mins + '</div></div>' +
+        '<div class="cell"><div class="lab">Status</div><div class="val">' + esc(a.status || '—') + '</div></div>' +
+        '<div class="cell"><div class="lab">Started</div><div class="val" style="font-size:0.85rem;">' + (a.startedAt ? new Date(a.startedAt).toLocaleString() : '—') + '</div></div>' +
+        '<div class="cell"><div class="lab">Finished</div><div class="val" style="font-size:0.85rem;">' + (a.completedAt ? new Date(a.completedAt).toLocaleString() : '—') + '</div></div>' +
+        '</div>' +
+        (a.codingEffort ? '<p class="muted" style="margin-top:1rem;text-align:left;"><strong>Coding effort:</strong> ' + esc(a.codingEffort) + '</p>' : '') +
+        '<p class="muted" style="margin-top:1.25rem;font-size:0.8rem;">QRS Second Round Assessment · Score Card</p>' +
+        '<p class="no-print" style="margin-top:1rem;"><button onclick="window.print()" style="padding:0.55rem 1.1rem;background:#4f46e5;color:#fff;border:0;border-radius:10px;cursor:pointer;font-weight:600;">Print / Save PDF</button></p>' +
+        '</div></body></html>');
+      w.document.close();
+      try { w.focus(); } catch (e) {}
+    }
+
     function printReport(id) {
       const a = getAssessments().find(x => x.id === id);
       if (!a) return alert('Candidate not found');
@@ -3957,6 +4219,11 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         '<div class="detail-row"><span>Role / Level</span><span>' + a.role + ' / ' + a.level + '</span></div>' +
         '<div class="detail-row"><span>Take test on</span><span>' + (typeof deviceModeLabel === 'function' ? deviceModeLabel(deviceModeFromRecord(a)) : (a.allowMobile ? 'Mobile or laptop' : 'Laptop only')) + '</span></div>' +
         '<div class="detail-row"><span>Device lock</span><span>' + (a.deviceLockId ? ('🔒 Locked' + (isAdmin() ? ' <button class="btn btn-outline" style="padding:0.15rem 0.45rem;font-size:0.72rem;" onclick="clearDeviceLock(\'' + a.id + '\')">Unlock device</button>' : '')) : 'Not started') + '</span></div>' +
+        ((a.deviceBlockLog && a.deviceBlockLog.length) ? ('<div class="detail-row"><span>Other-device attempts</span><span style="color:#b45309;font-weight:600;">🚫 ' + a.deviceBlockLog.length + ' blocked</span></div>' +
+          '<div style="font-size:0.8rem;color:#64748b;margin:0.25rem 0 0.6rem;padding:0.5rem 0.65rem;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;">' +
+          a.deviceBlockLog.slice(-8).map(function(d) {
+            return (d.at ? new Date(d.at).toLocaleString() : '') + (d.note ? (' — ' + String(d.note).replace(/</g,'&lt;')) : '');
+          }).join('<br>') + '</div>') : '') +
         '<div class="detail-row"><span>IP / device</span><span style="font-size:0.85rem;word-break:break-all;">' + (a.lastSeenIp || a.clientIp || '—') + (a.userAgent ? '<br><small style="color:#64748b;">' + String(a.userAgent).slice(0,100).replace(/</g,'&lt;') + '</small>' : '') + '</span></div>' +
         '<div class="detail-row"><span>Status</span><span>' + statusBadge(a.status, a) + (a.statusNote ? ' — ' + a.statusNote : '') + '</span></div>' +
         '<div class="detail-row"><span>MCQ (auto)</span><strong>' + (a.score != null ? a.score + ' / 100' : 'Not submitted') + (a.mcqCount != null ? ' <small style="color:#64748b;">(' + (a.mcqCorrect||0) + '/' + a.mcqCount + ' correct)</small>' : '') + '</strong></div>' +
@@ -4098,11 +4365,11 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       } else if (a.lastPhoto || (a.photoHistory && a.photoHistory.length)) {
         const photos = (a.photoHistory && a.photoHistory.length) ? a.photoHistory : [{ img: a.lastPhoto, at: a.lastPhotoAt }];
         window._proctorPhotos = photos;
-        html += '<div style="margin-top:1rem;"><strong>Proctor photos — full session (' + photos.length + ' stored)</strong>';
-        html += '<p style="font-size:0.82rem;color:#64748b;margin:0.3rem 0 0.6rem;">Captured from start until submit (photo every 1 min · 15s video every 2 min). Click any photo for full view.</p>';
+        html += '<div style="margin-top:1rem;"><strong>Proctor photos (' + photos.length + ' stored)</strong>';
+        html += '<p style="font-size:0.82rem;color:#64748b;margin:0.3rem 0 0.6rem;">Photo every 30 seconds · extra on flag. Click any photo for full view.</p>';
         html += '<div id="proctorPhotoGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:0.6rem;">';
         photos.forEach(function(p, i) {
-          const label = p.at ? new Date(p.at).toLocaleTimeString() : ('#' + (i+1));
+          const label = (p.event ? (p.event + ' · ') : '') + (p.at ? new Date(p.at).toLocaleTimeString() : ('#' + (i+1)));
           html += '<button type="button" data-photo-index="' + i + '" class="proctor-thumb-btn" style="display:block;width:100%;padding:0;border:1px solid #e2e8f0;border-radius:8px;background:#fff;cursor:zoom-in;text-align:center;overflow:hidden;">';
           html += '<img src="' + p.img + '" alt="Photo ' + (i+1) + '" style="width:100%;aspect-ratio:4/3;object-fit:cover;display:block;pointer-events:none;">';
           html += '<span style="display:block;padding:0.25rem;font-size:0.75rem;color:#64748b;">' + label + '</span></button>';
@@ -4111,9 +4378,27 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       } else {
         html += '<div style="margin-top:1rem;color:#64748b;font-size:0.9rem;">No proctor photo captured yet.</div>';
       }
+
+      // Start / flag / finish event log (tab context — browsers cannot name other tabs)
+      if (!coordMediaLock && a.eventSnapshots && a.eventSnapshots.length) {
+        html += '<div style="margin-top:1rem;"><strong>Event snapshots (' + a.eventSnapshots.length + ')</strong>';
+        html += '<p style="font-size:0.82rem;color:#64748b;margin:0.3rem 0 0.6rem;">Start, flag and finish. Browsers cannot reveal the name of other tabs; we store visibility/focus + page context.</p>';
+        html += '<div style="display:grid;gap:0.5rem;">';
+        a.eventSnapshots.slice().reverse().forEach(function(s) {
+          html += '<div style="border:1px solid #e2e8f0;border-radius:10px;padding:0.55rem 0.7rem;font-size:0.85rem;background:#f8fafc;">';
+          html += '<strong>' + (s.event || 'event') + '</strong> · ' + (s.at ? new Date(s.at).toLocaleString() : '');
+          html += '<br><span style="color:#64748b;">' + String(s.reason || '').replace(/</g,'&lt;') + '</span>';
+          html += '<br><small style="color:#94a3b8;">visibility=' + (s.visibility || '—') + ' · focus=' + s.hasFocus + ' · title=' + String(s.pageTitle || '').replace(/</g,'&lt;') + '</small>';
+          if (s.pageShot) {
+            html += '<div style="margin-top:0.35rem;"><img src="' + s.pageShot + '" alt="page" style="max-width:100%;max-height:160px;border-radius:8px;border:1px solid #e2e8f0;"></div>';
+          }
+          html += '</div>';
+        });
+        html += '</div></div>';
+      }
       
       if (!coordMediaLock && a.videoHistory && a.videoHistory.length) {
-        html += '<div style="margin-top:1rem;"><strong>Proctor video clips (' + a.videoHistory.length + ') — 15s every 2 min</strong>';
+        html += '<div style="margin-top:1rem;"><strong>Proctor video clips (' + a.videoHistory.length + ') — 30s every 2 min</strong>';
         html += '<p style="font-size:0.82rem;color:#64748b;margin:0.3rem 0 0.6rem;">Short clips recorded during the test.</p>';
         html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:0.75rem;">';
         a.videoHistory.forEach(function(v, i) {
@@ -4151,6 +4436,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
 
 html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' +
         '<button class="btn btn-primary" onclick="resendLink(\'' + id + '\')">🔗 Resend / Generate New Link</button>' +
+        '<button class="btn btn-outline" onclick="printScoreCard(\'' + id + '\')">🪪 Print Score Card</button>' +
         '<button class="btn btn-outline" onclick="printReport(\'' + id + '\')">Print / PDF Report</button>' +
         '<button class="btn btn-outline" onclick="sendResultCardEmail(\'' + id + '\')">📧 Email result card</button>' +
         '<button class="btn btn-outline" onclick="createResultCardLink(\'' + id + '\')">🪪 Result card link (5h)</button>' +
@@ -4375,16 +4661,79 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
     function exportCSV() {
       const list = getAssessments();
       if (!list.length) return alert('No data to export');
-      const headers = ['ID','Name','Email','Mobile','Role','Level','Status','Score','Flags','Created','Link Valid For (hrs)','Link Expires','Started','Completed'];
-      const rows = list.map(a => [a.id, a.name, a.email, a.mobile||'', a.role, a.level, a.status, a.score!==null?a.score:'', a.flags?a.flags.length:0, a.createdAt, a.linkValidityHours||'', a.expiresAt||'', a.startedAt||'', a.completedAt||'']);
-      const csv = [headers.join(','), ...rows.map(r => r.map(c => '"' + c + '"').join(','))].join('\n');
-      const blob = new Blob([csv], {type:'text/csv'});
+      const headers = [
+        'ID','Name','Email','Mobile','Role','Level','Status','Tag',
+        'MCQ Score','Final Score','Coding Effort','Flags',
+        'Photos','Videos','Device Mode',
+        'Created','Link Valid For (hrs)','Link Expires','Started','Completed','Time Taken (min)'
+      ];
+      const rows = list.map(function(a) {
+        const photos = (a.photoHistory && a.photoHistory.length)
+          ? a.photoHistory.length
+          : (a.lastPhoto ? 1 : 0);
+        const videos = (a.videoHistory && a.videoHistory.length) ? a.videoHistory.length : 0;
+        let mins = '';
+        try {
+          if (a.startedAt && a.completedAt) {
+            const s = new Date(a.startedAt).getTime();
+            const c = new Date(a.completedAt).getTime();
+            if (c > s) mins = String(Math.round((c - s) / 60000));
+          }
+        } catch (e) {}
+        const finalSc = (a.finalScore != null && a.finalScore !== '') ? a.finalScore : '';
+        const mcq = (a.mcqScore != null ? a.mcqScore : (a.score != null ? a.score : ''));
+        return [
+          a.id, a.name, a.email, a.mobile || '', a.role, a.level, a.status, a.tag || '',
+          mcq, finalSc, a.codingEffort || '',
+          a.flags ? a.flags.length : 0,
+          photos, videos, a.deviceMode || (a.allowMobile ? 'both' : 'laptop'),
+          a.createdAt || '', a.linkValidityHours || '', a.expiresAt || '',
+          a.startedAt || '', a.completedAt || '', mins
+        ];
+      });
+      const csv = [headers.join(','), ...rows.map(function(r) {
+        return r.map(function(c) {
+          return '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"';
+        }).join(',');
+      })].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'QRS_Results_' + new Date().toISOString().slice(0,10) + '.csv';
+      a.download = 'QRS_Results_' + new Date().toISOString().slice(0, 10) + '.csv';
       a.click();
       URL.revokeObjectURL(url);
+      showToast('CSV exported with scores, flags & media counts');
+    }
+
+    function copyCandidateSummary(id) {
+      const a = getAssessments().find(function(x) { return x.id === id; });
+      if (!a) return;
+      const photos = (a.photoHistory && a.photoHistory.length) ? a.photoHistory.length : (a.lastPhoto ? 1 : 0);
+      const videos = (a.videoHistory && a.videoHistory.length) ? a.videoHistory.length : 0;
+      const score = (typeof totalScore === 'function') ? totalScore(a) : (a.finalScore != null ? a.finalScore : a.score);
+      const lines = [
+        'QRS Assessment summary',
+        'Name: ' + (a.name || ''),
+        'Email: ' + (a.email || ''),
+        'Role / Level: ' + (a.role || '') + ' / ' + (a.level || ''),
+        'Status: ' + (a.status || ''),
+        'Score: ' + (score != null ? score + '/100' : '—'),
+        'Flags: ' + ((a.flags && a.flags.length) || 0),
+        'Photos: ' + photos + ' · Videos: ' + videos,
+        'Started: ' + (a.startedAt ? new Date(a.startedAt).toLocaleString() : '—'),
+        'Completed: ' + (a.completedAt ? new Date(a.completedAt).toLocaleString() : '—')
+      ];
+      const text = lines.join('\n');
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function() {
+          showToast('Summary copied');
+        }).catch(function() {
+          prompt('Copy summary:', text);
+        });
+      } else {
+        prompt('Copy summary:', text);
+      }
     }
 
     async function changePassword() {
@@ -4722,8 +5071,71 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
       }
     }
 
+    // Track last seen photo timestamps so new arrivals can flash (feature 6)
+    window.__livePhotoSeen = window.__livePhotoSeen || {};
+
+    function toggleLiveWallMode() {
+      const grid = document.getElementById('liveMonitorGrid');
+      const cb = document.getElementById('liveWallMode');
+      if (!grid) return;
+      const on = !!(cb && cb.checked);
+      grid.classList.toggle('wall-mode', on);
+      try { lsSet('qrs_live_wall', on ? '1' : '0'); } catch (e) {}
+    }
+
+    function renderBreakRequestsPanel() {
+      const box = document.getElementById('liveBreakRequests');
+      const badge = document.getElementById('breakRequestBadge');
+      if (!box) return;
+      const pending = getAssessments().filter(function(a) {
+        return a.breakRequest && a.breakRequest.status === 'pending';
+      });
+      if (badge) {
+        badge.style.display = pending.length ? 'inline-block' : 'none';
+        badge.textContent = '☕ ' + pending.length + ' break request' + (pending.length === 1 ? '' : 's');
+      }
+      if (!pending.length) {
+        box.style.display = 'none';
+        box.innerHTML = '';
+        return;
+      }
+      box.style.display = 'block';
+      box.innerHTML = '<h3 style="margin:0 0 0.55rem;font-size:0.95rem;color:#b45309;">☕ Break requests</h3>' +
+        pending.map(function(a) {
+          const when = a.breakRequest.at ? new Date(a.breakRequest.at).toLocaleTimeString() : '';
+          const reason = (a.breakRequest.reason || 'Needs a short break').replace(/</g, '&lt;');
+          return '<div style="display:flex;justify-content:space-between;align-items:center;gap:0.6rem;flex-wrap:wrap;padding:0.5rem 0;border-bottom:1px solid #fde68a;font-size:0.88rem;">' +
+            '<div><strong>' + (a.name || a.id) + '</strong> · ' + (a.role || '') + '<br><small style="color:#64748b;">' + reason + ' · ' + when + '</small></div>' +
+            '<div style="display:flex;gap:0.35rem;">' +
+            '<button class="btn btn-primary" style="padding:0.25rem 0.55rem;font-size:0.78rem;" onclick="respondBreakRequest(\'' + a.id + '\', true)">Approve 2 min</button>' +
+            '<button class="btn btn-outline" style="padding:0.25rem 0.55rem;font-size:0.78rem;" onclick="respondBreakRequest(\'' + a.id + '\', false)">Deny</button>' +
+            '</div></div>';
+        }).join('');
+    }
+
+    async function respondBreakRequest(id, approve) {
+      const list = getAssessments();
+      const idx = list.findIndex(function(x) { return x.id === id; });
+      if (idx < 0) return;
+      const a = list[idx];
+      if (!a.breakRequest) return;
+      a.breakRequest.status = approve ? 'approved' : 'denied';
+      a.breakRequest.respondedAt = new Date().toISOString();
+      if (approve) {
+        a.extraMinutes = (a.extraMinutes || 0) + 2;
+        a.breakRequest.note = 'Approved +2 min exam time';
+      } else {
+        a.breakRequest.note = 'Denied by admin';
+      }
+      try { await syncRecordToBackend(a); } catch (e) {}
+      lsSet('assessments', JSON.stringify(list));
+      showToast(approve ? ('Break approved for ' + a.name) : ('Break denied for ' + a.name));
+      renderBreakRequestsPanel();
+      refreshAll();
+    }
+
     function renderLiveMonitor() {
-      const STALE_MS = 3 * 60 * 1000; // matches the "recent activity" window used elsewhere (second-device check)
+      const STALE_MS = 3 * 60 * 1000;
       const inProgress = getAssessments().filter(a => a.status === 'in-progress' || a.status === 'flagged');
       const isRecent = a => {
         const t = a.lastActivityAt ? new Date(a.lastActivityAt).getTime() : (a.lastPhotoAt ? new Date(a.lastPhotoAt).getTime() : 0);
@@ -4735,12 +5147,26 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
       const countEl = document.getElementById('liveCount');
       if (countEl) countEl.textContent = list.length + ' live';
       if (!grid) return;
+      try {
+        const wallCb = document.getElementById('liveWallMode');
+        if (wallCb && lsGet('qrs_live_wall') === '1') {
+          wallCb.checked = true;
+          grid.classList.add('wall-mode');
+        }
+      } catch (e) {}
+      try { renderBreakRequestsPanel(); } catch (e) {}
       if (!list.length) {
         grid.innerHTML = '<p style="color:#64748b;font-size:0.9rem;">No candidates currently in progress.</p>' +
           (staleList.length ? '<p style="color:#b45309;font-size:0.82rem;margin-top:0.5rem;">⚠️ ' + staleList.length + ' candidate(s) show "in progress" but haven\'t been active in over 3 minutes — likely closed their browser without finishing. <button class="btn btn-outline" style="padding:0.15rem 0.5rem;font-size:0.75rem;" onclick="showStaleInProgress()">View them</button></p>' : '');
         return;
       }
+      const seen = window.__livePhotoSeen;
       grid.innerHTML = list.map(a => {
+        const photoAt = a.lastPhotoAt || '';
+        const prevAt = seen[a.id];
+        const isFresh = !!(photoAt && prevAt && photoAt !== prevAt);
+        if (photoAt) seen[a.id] = photoAt;
+        else if (!seen[a.id]) seen[a.id] = '';
         const photo = a.lastPhoto
           ? '<img src="' + a.lastPhoto + '" alt="proctor" style="width:100%;height:150px;object-fit:cover;display:block;background:#0f172a;">'
           : '<div style="width:100%;height:150px;background:#e2e8f0;display:flex;align-items:center;justify-content:center;font-size:0.8rem;color:#64748b;">No photo yet</div>';
@@ -4749,6 +5175,7 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
         const photoCount = a.photoHistory ? a.photoHistory.length : (a.lastPhoto ? 1 : 0);
         const videoCount = a.videoHistory ? a.videoHistory.length : 0;
         const flagCount = a.flags ? a.flags.length : 0;
+        const deviceBlocks = (a.deviceBlockLog && a.deviceBlockLog.length) ? a.deviceBlockLog.length : 0;
         const prog = candidateProgress(a);
         const progPct = prog.total ? Math.min(100, Math.round((prog.answered / prog.total) * 100)) : 0;
         const progBar = prog.total
@@ -4761,16 +5188,20 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
               '</div>' +
             '</div>'
           : '';
-        return '<div style="background:#fff;border:1px solid ' + (flagCount ? '#fca5a5' : '#c7d2fe') + ';border-radius:14px;overflow:hidden;cursor:pointer;" onclick="openLiveFeed(\'' + a.id + '\')">' +
+        const cls = 'live-card' + (flagCount ? ' flagged-live' : '') + (isFresh ? ' photo-fresh' : '');
+        return '<div class="' + cls + '" style="background:#fff;border:1px solid ' + (flagCount ? '#fca5a5' : '#c7d2fe') + ';border-radius:14px;overflow:hidden;cursor:pointer;" onclick="openLiveFeed(\'' + a.id + '\')">' +
           photo +
-          '<div style="padding:0.7rem 0.85rem;">' +
+          '<div class="live-card-body" style="padding:0.7rem 0.85rem;">' +
             '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.4rem;">' +
               '<strong style="font-size:0.92rem;">' + a.name + '</strong>' +
-              '<span class="badge" style="background:' + (flagCount ? '#fee2e2;color:#991b1b' : '#d1fae5;color:#065f46') + ';white-space:nowrap;">' + (flagCount ? flagCount + ' flag' + (flagCount > 1 ? 's' : '') : 'LIVE') + '</span>' +
+              '<span class="badge" style="background:' + (flagCount ? '#fee2e2;color:#991b1b' : '#d1fae5;color:#065f46') + ';white-space:nowrap;">' +
+                (flagCount ? flagCount + ' flag' + (flagCount > 1 ? 's' : '') : (isFresh ? 'NEW 📷' : 'LIVE')) + '</span>' +
             '</div>' +
             '<div style="font-size:0.8rem;color:#64748b;margin-top:0.2rem;">' + a.role + ' (' + a.level + ')</div>' +
             '<div style="font-size:0.78rem;color:#64748b;margin-top:0.4rem;">Elapsed: ' + fmtElapsed(a.startedAt) + '</div>' +
-            '<div style="font-size:0.78rem;color:#64748b;">📷 ' + photoCount + ' · 🎥 ' + videoCount + ' · Last photo ' + agoText + '</div>' +
+            '<div style="font-size:0.78rem;color:#64748b;">📷 ' + photoCount + ' · 🎥 ' + videoCount + ' · Last photo ' + agoText +
+              (deviceBlocks ? ' · 🚫 ' + deviceBlocks + ' other-device try' : '') + '</div>' +
+            (a.breakRequest && a.breakRequest.status === 'pending' ? '<div style="margin-top:0.35rem;font-size:0.78rem;color:#b45309;font-weight:600;">☕ Break requested</div>' : '') +
             progBar +
           '</div>' +
         '</div>';
@@ -4825,18 +5256,26 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
         ? '<img src="' + a.lastPhoto + '" style="width:100%;max-height:320px;object-fit:contain;border-radius:10px;background:#0f172a;margin:0.4rem 0 1rem;border:1px solid #e2e8f0;cursor:zoom-in;" onclick="openPhotoGallery(\'' + id + '\')" title="Click to view full gallery">'
         : '<div style="padding:1rem;color:#94a3b8;font-size:0.85rem;">No photo captured yet.</div>';
 
-      const videos = (a.videoHistory || []).slice(-4).reverse();
-      html += '<strong style="font-size:0.85rem;">Recent video clips (' + (a.videoHistory ? a.videoHistory.length : 0) + ' total)</strong>';
-      if (videos.length) {
-        html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:0.5rem;margin-top:0.4rem;">';
-        videos.forEach(v => {
-          const label = v.at ? new Date(v.at).toLocaleTimeString() : '';
-          html += '<div><video src="' + v.video + '" controls preload="none" style="width:100%;border-radius:8px;background:#0f172a;"></video>' +
-            '<div style="font-size:0.72rem;color:#64748b;text-align:center;margin-top:0.2rem;">' + label + '</div></div>';
+      const allVids = (a.videoHistory || []).slice().reverse();
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;flex-wrap:wrap;margin-top:0.25rem;">' +
+        '<strong style="font-size:0.85rem;">Video clips (' + allVids.length + ') — 30s every 2 min</strong>' +
+        (isAdmin() ? '<button class="btn btn-outline" style="padding:0.2rem 0.55rem;font-size:0.75rem;" onclick="event.stopPropagation();downloadCandidateMediaToDevice(\'' + id + '\', false)">💾 Download media</button>' : '') +
+        '</div>';
+      if (allVids.length) {
+        html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:0.55rem;margin-top:0.45rem;max-height:280px;overflow-y:auto;">';
+        allVids.forEach(function(v, i) {
+          const label = v.at ? new Date(v.at).toLocaleString() : ('Clip ' + (i + 1));
+          if (v.video) {
+            html += '<div style="border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;background:#0f172a;">' +
+              '<video src="' + v.video + '" controls preload="metadata" style="width:100%;display:block;max-height:140px;background:#0f172a;"></video>' +
+              '<div style="font-size:0.72rem;color:#cbd5e1;text-align:center;padding:0.3rem 0.4rem;background:#1e293b;">' + label + ' · 30s</div></div>';
+          } else {
+            html += '<div style="border:1px solid #e2e8f0;border-radius:10px;padding:0.75rem;font-size:0.8rem;color:#64748b;">Clip recorded ' + label + ' (open Full details if playback missing)</div>';
+          }
         });
         html += '</div>';
       } else {
-        html += '<div style="padding:0.6rem 0;color:#94a3b8;font-size:0.85rem;">No video clip yet — clips are captured every few minutes.</div>';
+        html += '<div style="padding:0.6rem 0;color:#94a3b8;font-size:0.85rem;">No video clip yet — 30s clips every 2 minutes while the test runs.</div>';
       }
       content.innerHTML = html;
     }
@@ -5137,10 +5576,16 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
       const list = getAssessments();
       const justChangedIds = [];
       const now = Date.now();
+      const graceMs = 10 * 60 * 1000; // avoid false "missed" from small clock skew
       list.forEach(a => {
         if (!a || a.status === 'completed' || a.status === 'in-progress' || a.status === 'flagged' || a.status === 'missed') return;
-        const exp = a.expiresAt ? new Date(a.expiresAt).getTime() : null;
-        if (!exp || exp >= now) return;
+        let expTs = null;
+        if (a.expiresAt) {
+          let t = String(a.expiresAt).trim();
+          if (t && !/[zZ]$/.test(t) && !/[+-]\d{2}:?\d{2}$/.test(t) && /^\d{4}-\d{2}-\d{2}T/.test(t)) t = t + 'Z';
+          expTs = new Date(t).getTime();
+        }
+        if (!expTs || isNaN(expTs) || expTs + graceMs >= now) return;
         if (a.status === 'pending' && !a.startedAt) {
           a.status = 'missed';
           a.statusNote = (a.statusNote ? a.statusNote + ' · ' : '') + 'Auto: missed (link expired, never started)';
@@ -5256,9 +5701,57 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
       }).join('');
     }
 
-    async function cleanupOldMedia(days) {
+    function saveAutoClearMediaPref() {
+      const el = document.getElementById('autoClearMedia7');
+      const on = !!(el && el.checked);
+      try { lsSet('qrs_auto_clear_media_7', on ? '1' : '0'); } catch (e) {}
+      showToast(on ? 'Auto-clear media after 7 days: ON' : 'Auto-clear media after 7 days: OFF');
+      if (on) maybeAutoClearOldMedia(true);
+    }
+
+    function loadAutoClearMediaPref() {
+      const el = document.getElementById('autoClearMedia7');
+      if (!el) return;
+      try {
+        const raw = lsGet('qrs_auto_clear_media_7');
+        if (raw === null || raw === undefined || raw === '') {
+          lsSet('qrs_auto_clear_media_7', '1');
+          el.checked = true;
+        } else {
+          el.checked = raw === '1';
+        }
+      } catch (e) {}
+    }
+
+    async function maybeAutoClearOldMedia(silent) {
+      let on = false;
+      try {
+        const raw = lsGet('qrs_auto_clear_media_7');
+        if (raw === null || raw === undefined || raw === '') {
+          lsSet('qrs_auto_clear_media_7', '1');
+          on = true;
+        } else {
+          on = raw === '1';
+        }
+      } catch (e) {}
+      if (!on) return 0;
+      // Run at most once per browser day
+      const today = new Date().toISOString().slice(0, 10);
+      try {
+        if (lsGet('qrs_auto_clear_ran') === today && !silent) return 0;
+      } catch (e) {}
+      const n = await cleanupOldMedia(7, { silent: true, skipConfirm: true });
+      try { lsSet('qrs_auto_clear_ran', today); } catch (e) {}
+      if (n > 0) showToast('Auto-cleared media for ' + n + ' old candidate(s)');
+      return n;
+    }
+
+    async function cleanupOldMedia(days, opts) {
       days = days || 7;
-      if (!confirm('Clear photos & videos for candidates completed more than ' + days + ' days ago? Scores and answers stay.')) return;
+      opts = opts || {};
+      if (!opts.skipConfirm) {
+        if (!confirm('Clear photos & videos for candidates completed more than ' + days + ' days ago? Scores and answers stay.')) return 0;
+      }
       const list = getAssessments();
       const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
       let n = 0;
@@ -5281,8 +5774,13 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
         n++;
       }
       lsSet('assessments', JSON.stringify(list));
-      refreshAll();
-      alert('Cleared media for ' + n + ' candidate(s) older than ' + days + ' days.');
+      if (!opts.silent) {
+        refreshAll();
+        alert('Cleared media for ' + n + ' candidate(s) older than ' + days + ' days.');
+      } else if (n) {
+        try { refreshAll(); } catch (e) {}
+      }
+      return n;
     }
 
 
@@ -5292,10 +5790,17 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
       list.forEach(function(a) {
         if (!a || !a.id) return;
         let dirty = false;
-        // Fill missing MCQ score from answers
-        if ((a.score == null || a.score === '') && a.answers && Object.keys(a.answers).length) {
+        // Fill missing OR zero MCQ score when answers exist (fixes "everyone 0" when answers saved but score lost)
+        if (a.answers && Object.keys(a.answers).length) {
           const calc = typeof computeMcqFromAnswers === 'function' ? computeMcqFromAnswers(a) : null;
-          if (calc) {
+          if (calc && (calc.score > 0 || calc.count > 0) && (a.score == null || a.score === '')) {
+            a.score = calc.score;
+            a.mcqScore = calc.score;
+            a.mcqCorrect = calc.correct;
+            a.mcqCount = calc.count;
+            a.mcqTotal = calc.marks;
+            dirty = true;
+          } else if (calc && calc.score > 0 && Number(a.score) === 0) {
             a.score = calc.score;
             a.mcqScore = calc.score;
             a.mcqCorrect = calc.correct;
@@ -5304,24 +5809,48 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
             dirty = true;
           }
         }
+        // Candidate started but admin still shows pending → in-progress
+        if ((a.status === 'pending' || !a.status) && (a.startedAt || a.lastActivityAt || a.lastPhoto || (a.photoCount > 0))) {
+          a.status = 'in-progress';
+          dirty = true;
+        }
         // If completedAt exists but status still in-progress/flagged → completed
         if (a.completedAt && (a.status === 'in-progress' || a.status === 'flagged' || a.status === 'pending')) {
           a.status = 'completed';
           dirty = true;
         }
+        // Score present (including 0) + answers → treat as completed for admin visibility
+        if (a.score != null && a.score !== '' && a.status !== 'completed' && a.status !== 'missed' && a.status !== 'expired') {
+          if (a.completedAt || (a.answers && Object.keys(a.answers).length >= 1)) {
+            a.status = 'completed';
+            if (!a.completedAt) a.completedAt = a.lastActivityAt || new Date().toISOString();
+            dirty = true;
+          }
+        }
         // If score exists and status flagged with completedAt or many answers → completed
-        if (a.score != null && a.status === 'flagged' && (a.completedAt || (a.answers && Object.keys(a.answers).length >= 3))) {
+        if (a.score != null && a.score !== '' && a.status === 'flagged' && (a.completedAt || (a.answers && Object.keys(a.answers).length >= 3))) {
           a.status = 'completed';
           if (!a.completedAt) a.completedAt = new Date().toISOString();
           dirty = true;
+        }
+        // Completed with answers but score still null → recompute (keep 0 if truly zero)
+        if (a.status === 'completed' && a.answers && Object.keys(a.answers).length && (a.score == null || a.score === '')) {
+          const calc2 = typeof computeMcqFromAnswers === 'function' ? computeMcqFromAnswers(a) : null;
+          if (calc2) {
+            a.score = calc2.score;
+            a.mcqScore = calc2.score;
+            a.mcqCorrect = calc2.correct;
+            a.mcqCount = calc2.count;
+            a.mcqTotal = calc2.marks;
+            dirty = true;
+          }
         }
         if (dirty) changed.push(a.id);
       });
       if (changed.length) {
         lsSet('assessments', JSON.stringify(list));
-        if (typeof saveSomeAssessments === 'function') {
-          try { saveSomeAssessments(list, changed); } catch (e) {}
-        }
+        // Do NOT push healed pending→completed to server here with stale data —
+        // only update local cache; server is source of truth from candidate device
       }
       return changed.length;
     }
@@ -5339,8 +5868,12 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
       try { renderHelpSupport(); } catch (e) { console.warn(e); }
       try {
         if (typeof updateHelpBadge === 'function') updateHelpBadge(); if (typeof updateMediaBadge === 'function') updateMediaBadge();
+        if (typeof updateStorageMeter === 'function') updateStorageMeter();
+        if (typeof loadAutoClearMediaPref === 'function') loadAutoClearMediaPref();
+        if (typeof maybeAutoClearOldMedia === 'function') maybeAutoClearOldMedia(true);
         if (typeof updateBackupReminder === 'function') updateBackupReminder();
         if (typeof renderTodaySchedule === 'function') renderTodaySchedule();
+        if (typeof renderBreakRequestsPanel === 'function') renderBreakRequestsPanel();
       } catch (e) { console.warn(e); }
       try {
         if (document.getElementById('tab-ranking') && document.getElementById('tab-ranking').classList.contains('active')) renderRanking();

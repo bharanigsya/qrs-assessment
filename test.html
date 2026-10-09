@@ -363,13 +363,18 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
         const data = await res.json();
         const overrides = (data && data.overrides) || {};
         Object.keys(overrides).forEach(key => {
-          const [role, level] = key.split('/');
+          const parts = String(key).split('/');
+          const role = (parts[0] || '').toLowerCase().trim();
+          const level = (parts[1] || '').toLowerCase().trim();
           if (!role || !level || !overrides[key]) return;
           if (typeof QUESTION_BANK === 'undefined') return;
+          const qs = overrides[key].questions;
+          // Never replace bank with empty/invalid override (caused blank tests)
+          if (!Array.isArray(qs) || qs.length === 0) return;
           if (!QUESTION_BANK[role]) QUESTION_BANK[role] = {};
           QUESTION_BANK[role][level] = {
             duration: overrides[key].duration || (QUESTION_BANK[role][level] && QUESTION_BANK[role][level].duration) || 45,
-            questions: overrides[key].questions,
+            questions: qs,
           };
         });
       } catch (e) {
@@ -388,6 +393,7 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
     let isRecording = false;
     let faceCheckInterval = null;
     let noFaceCount = 0;
+    let lastFaceSeenAt = Date.now(); // used to skip video clips when face is missing
     const SESSION_KEY = 'qrs_test_session_';
     const DEVICE_LOCK_KEY = 'qrs_device_lock_';
     function getClientSessionId(aid) {
@@ -441,6 +447,34 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
         document.getElementById('testUI').style.display = 'none';
       } catch (e) {}
     }
+    function logDeviceBlockAttempt(note) {
+      if (!assessment) return;
+      if (!assessment.deviceBlockLog) assessment.deviceBlockLog = [];
+      assessment.deviceBlockLog.push({
+        at: new Date().toISOString(),
+        note: String(note || 'Blocked other device/tab').slice(0, 200),
+        deviceId: (typeof getStableDeviceId === 'function' ? getStableDeviceId() : '').slice(0, 40)
+      });
+      if (assessment.deviceBlockLog.length > 20) {
+        assessment.deviceBlockLog = assessment.deviceBlockLog.slice(-20);
+      }
+      try { saveAssessment(); } catch (e) {}
+      try {
+        if (typeof syncAssessmentToBackend === 'function') syncAssessmentToBackend(2);
+        else {
+          fetch(BACKEND_BASE + '/api/assessments/' + encodeURIComponent(assessment.id), {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id: assessment.id,
+              token: assessment.token,
+              deviceBlockLog: assessment.deviceBlockLog
+            })
+          }).catch(function() {});
+        }
+      } catch (e) {}
+    }
+
     function enforceDeviceLock() {
       if (!assessment) return true;
       const st = assessment.status;
@@ -448,6 +482,7 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
       if (!assessment.deviceLockId) return true; // not locked yet
       const mine = getStableDeviceId();
       if (assessment.deviceLockId && assessment.deviceLockId !== mine) {
+        logDeviceBlockAttempt('Opened link on a different device while locked');
         showDeviceLockBlock('Started on another device. This browser is blocked for this link.');
         return false;
       }
@@ -647,9 +682,21 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
       // the backend is unreachable.
       await applyQuestionOverrides();
 
+      // questions.js must be loaded — without it the test page is blank
+      if (typeof getAssessment !== 'function' || typeof QUESTION_BANK === 'undefined') {
+        alert('Question bank failed to load (questions.js). Refresh the page. If it keeps failing, tell admin to check that questions.js is on the server.');
+        console.error('QUESTION_BANK missing — questions.js not loaded');
+        return;
+      }
+
       const data = getAssessment(assessment.role, assessment.level);
-      if (!data) {
-        alert('Questions not found');
+      if (!data || !data.questions || !data.questions.length) {
+        const roleKeys = Object.keys(QUESTION_BANK || {}).join(', ');
+        alert(
+          'No questions found for role "' + (assessment.role || '') + '" / level "' + (assessment.level || '') + '".\n\n' +
+          'Available roles: ' + roleKeys + '\n\nAsk admin to recreate the link with a valid role and level.'
+        );
+        console.error('getAssessment returned empty', assessment.role, assessment.level);
         return;
       }
       questions = data.questions;
@@ -1223,6 +1270,7 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
         assessment.deviceLockId = getStableDeviceId();
         assessment.deviceLockedAt = new Date().toISOString();
       } else if (assessment.deviceLockId !== getStableDeviceId()) {
+        logDeviceBlockAttempt('Tried to start on a different device');
         showDeviceLockBlock();
         return;
       }
@@ -1243,16 +1291,17 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
       startFaceDetection();
       assessment.photoHistory = assessment.photoHistory || [];
       assessment.videoHistory = assessment.videoHistory || [];
+      // Mandatory proctoring: photo every 30s + 30s video with mic every 2 min
       if (assessment.storePhotos !== false) {
         startPhotoCapture();
+        try { startVideoClips(); } catch (e) { console.warn('Video clips start failed', e); }
       } else {
         const cnt = document.getElementById('photoCountHint');
-        if (cnt) cnt.textContent = 'Proctor photos disabled for this link';
+        if (cnt) cnt.textContent = 'Proctor photos/video disabled for this link';
       }
       try { setupMobileProctorPanel(); } catch (e) {}
       try { updatePortraitLock(); } catch (e) {}
       try { updateOfflineBanner(); } catch (e) {}
-      /* startVideoClips disabled */
       startTimer();
       renderQuestion();
     }
@@ -1373,14 +1422,17 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
         mcqTotal: assessment.mcqTotal,
         mcqCorrect: assessment.mcqCorrect,
         mcqCount: assessment.mcqCount,
-        answers: assessment.answers || {},
-        flags: assessment.flags || [],
+        answers: assessment.answers || (typeof answers !== 'undefined' ? answers : {}) || {},
+        flags: assessment.flags || (typeof flags !== 'undefined' ? flags : []) || [],
         completedAt: assessment.completedAt || null,
         startedAt: assessment.startedAt || null,
         name: assessment.name,
         email: assessment.email,
         role: assessment.role,
         level: assessment.level,
+        lastPhoto: assessment.lastPhoto || null,
+        lastPhotoAt: assessment.lastPhotoAt || null,
+        photoCount: assessment.photoCount || 0,
         lastActivityAt: assessment.lastActivityAt || new Date().toISOString()
       });
       for (let attempt = 0; attempt <= retries; attempt++) {
@@ -1422,29 +1474,111 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
     // shown) until the result is confirmed saved on the backend. A single failed sync used
     // to mean the candidate's finished result never reached the admin at all — this makes
     // sure a brief network blip or a slow/cold backend doesn't lose it permanently.
+    function setResultDeliveryUI(state, detail) {
+      // state: sending | ok | fail
+      try {
+        let el = document.getElementById('resultDeliveryStatus');
+        if (!el) {
+          const box = document.getElementById('completedUI');
+          if (!box) return;
+          el = document.createElement('div');
+          el.id = 'resultDeliveryStatus';
+          el.style.cssText = 'margin:0.75rem auto 0;max-width:520px;padding:0.65rem 0.9rem;border-radius:10px;font-size:0.88rem;font-weight:600;text-align:center;';
+          const card = box.querySelector('.card');
+          if (card) card.insertBefore(el, card.firstChild.nextSibling);
+          else box.insertBefore(el, box.firstChild);
+        }
+        if (state === 'ok') {
+          el.style.background = '#ecfdf5'; el.style.border = '1px solid #6ee7b7'; el.style.color = '#065f46';
+          el.textContent = '✓ Result saved for HR' + (detail ? (' — ' + detail) : '');
+        } else if (state === 'fail') {
+          el.style.background = '#fef2f2'; el.style.border = '1px solid #fecaca'; el.style.color = '#991b1b';
+          el.textContent = '⚠ Still sending result to HR… keep this page open. ' + (detail || '');
+        } else {
+          el.style.background = '#fffbeb'; el.style.border = '1px solid #fcd34d'; el.style.color = '#92400e';
+          el.textContent = 'Sending result to HR… please keep this tab open.';
+        }
+      } catch (e) {}
+    }
+
     function ensureResultDelivered() {
       let attempts = 0;
-      const maxAttempts = 24;
+      const maxAttempts = 30;
+      setResultDeliveryUI('sending');
       const tryOnce = async () => {
         attempts++;
+        // Force status completed on every retry
+        if (assessment) {
+          assessment.status = 'completed';
+          if (!assessment.completedAt) assessment.completedAt = new Date().toISOString();
+        }
         const ok = await syncAssessmentToBackend(2);
         if (ok) {
-          console.log('Result confirmed delivered to backend.');
-          return;
+          // Verify server actually has completed (not just HTTP 200 with merge quirks)
+          try {
+            const res = await fetch(BACKEND_BASE + '/api/assessments/' + encodeURIComponent(assessment.id) +
+              '?token=' + encodeURIComponent(assessment.token));
+            if (res.ok) {
+              const remote = await res.json();
+              if (remote && (remote.status === 'completed' || remote.completedAt || remote.score != null)) {
+                console.log('Result confirmed delivered to backend.');
+                setResultDeliveryUI('ok', remote.score != null ? ('score ' + remote.score) : '');
+                return;
+              }
+            }
+          } catch (e) {}
         }
-        // Faster early retries (cold start on Render), then every 20s
-        const delay = attempts < 5 ? 4000 : 20000;
+        setResultDeliveryUI('fail', 'retry ' + attempts);
+        const delay = attempts < 6 ? 3000 : 15000;
         if (attempts < maxAttempts) setTimeout(tryOnce, delay);
-        else console.warn('Could not confirm result reached backend after repeated attempts.');
+        else {
+          console.warn('Could not confirm result reached backend after repeated attempts.');
+          setResultDeliveryUI('fail', 'Could not confirm. Contact recruiter with your name.');
+        }
       };
-      // First attempt almost immediately after submit
-      setTimeout(tryOnce, 400);
+      setTimeout(tryOnce, 300);
+    }
+
+    // Resize/compress frame so Cloudflare tunnel does not drop the request
+    function frameToJpeg(video, maxW, quality) {
+      maxW = maxW || 1280;
+      quality = quality || 0.9;
+      if (!video || !video.videoWidth) return null;
+      const scale = Math.min(1, maxW / video.videoWidth);
+      const w = Math.max(1, Math.round(video.videoWidth * scale));
+      const h = Math.max(1, Math.round(video.videoHeight * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(video, 0, 0, w, h);
+      let q = quality;
+      let dataUrl = canvas.toDataURL('image/jpeg', q);
+      // Only shrink if upload would fail (keep HD when possible)
+      while (dataUrl && dataUrl.length > 4500000 && q > 0.55) {
+        q -= 0.08;
+        dataUrl = canvas.toDataURL('image/jpeg', q);
+      }
+      if (dataUrl && dataUrl.length > 4800000) {
+        const c2 = document.createElement('canvas');
+        c2.width = Math.max(1, Math.round(w * 0.75));
+        c2.height = Math.max(1, Math.round(h * 0.75));
+        c2.getContext('2d').drawImage(canvas, 0, 0, c2.width, c2.height);
+        dataUrl = c2.toDataURL('image/jpeg', 0.72);
+      }
+      return dataUrl;
     }
 
     // Send proctor photo to backend with retries (cold start / brief offline)
     async function sendPhotoToBackend(imgDataUrl, atIso) {
       if (!assessment || !assessment.id || !imgDataUrl) return false;
-      for (let attempt = 0; attempt < 4; attempt++) {
+      if (imgDataUrl.length > 3800000) {
+        console.warn('Photo too large after compress, skip', imgDataUrl.length);
+        return false;
+      }
+      for (let attempt = 0; attempt < 5; attempt++) {
         try {
           const res = await fetch(BACKEND_BASE + '/api/assessments/' + encodeURIComponent(assessment.id) + '/photos', {
             method: 'POST',
@@ -1456,27 +1590,18 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
             return true;
           }
           console.warn('Photo upload HTTP ' + res.status);
+          if (res.status === 413) return false;
         } catch (e) {
           console.warn('Photo upload attempt ' + (attempt + 1) + ' failed:', e);
         }
-        await new Promise(r => setTimeout(r, 1200 * (attempt + 1)));
+        await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
       }
       return false;
     }
 
     // ========== Proctoring ==========
     function setupProctoring() {
-      // Tab / window switch
-      document.addEventListener('visibilitychange', () => {
-        if (document.hidden) {
-          addFlag('Browser tab minimized or switched away');
-        }
-      });
-
-      // Window blur (switched to another app)
-      window.addEventListener('blur', () => {
-        addFlag('Window lost focus (switched to another application)');
-      });
+      // Tab/window leave is handled once below (visibilitychange + blur) to avoid double flags.
 
       // Disable right click everywhere
       document.addEventListener('contextmenu', e => {
@@ -1604,6 +1729,7 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
             } else if (count > 1) {
               multiFaceCount++;
               noFaceCount = 0;
+              lastFaceSeenAt = Date.now();
               faceEl.textContent = `⚠️ ${count} faces detected`;
               faceEl.style.color = 'var(--danger)';
               if (multiFaceCount >= 2) { // ~6 seconds sustained
@@ -1613,6 +1739,7 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
             } else {
               noFaceCount = 0;
               multiFaceCount = 0;
+              lastFaceSeenAt = Date.now();
               faceEl.textContent = '● Face present';
               faceEl.style.color = 'var(--success)';
             }
@@ -1660,7 +1787,7 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
     let activeClipRecorder = null;
 
     function startPhotoCapture() {
-      // Only skip when admin explicitly disabled photos for this link
+      // Mandatory: 1 photo every 30 seconds until submit (+ extra on flag)
       if (assessment && assessment.storePhotos === false) {
         console.log('Photo capture skipped — storePhotos is off');
         const cnt = document.getElementById('photoCountHint');
@@ -1672,12 +1799,12 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
         photoInterval = null;
       }
       const video = document.getElementById('cameraFeed');
-      const canvas = document.createElement('canvas');
-      // 1 photo every 1 minute after a reliable first capture
+      // Mobile = HD; laptop slightly lighter for tunnel stability
       const onMobile = !!(assessment && getDeviceMode() !== 'laptop' && isMobileDevice());
-      const MAX_CAPTURE_WIDTH = onMobile ? 1920 : 1280;
-      const JPEG_QUALITY = 0.95; // HD quality — mobile & desktop
-      const LOCAL_HISTORY_LIMIT = onMobile ? 4 : 6;
+      const MAX_CAPTURE_WIDTH = onMobile ? 1920 : 960;
+      const JPEG_QUALITY = onMobile ? 0.92 : 0.8;
+      const LOCAL_HISTORY_LIMIT = onMobile ? 8 : 8;
+      const PHOTO_EVERY_MS = 30000; // 1 photo every 30 seconds until submit
       let firstOk = false;
 
       const captureOnce = async function() {
@@ -1686,7 +1813,6 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
             console.warn('Photo capture: no video element');
             return false;
           }
-          // Ensure stream is still playing
           if (video.paused) {
             try { await video.play(); } catch (e) {}
           }
@@ -1694,29 +1820,7 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
             console.warn('Photo capture: camera not ready yet (readyState=' + (video.readyState || 0) + ')');
             return false;
           }
-          const scale = Math.min(1, MAX_CAPTURE_WIDTH / video.videoWidth);
-          const w = Math.max(1, Math.round(video.videoWidth * scale));
-          const h = Math.max(1, Math.round(video.videoHeight * scale));
-          canvas.width = w;
-          canvas.height = h;
-          const ctx = canvas.getContext('2d');
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'high';
-          ctx.drawImage(video, 0, 0, w, h);
-          // Mild contrast boost for clearer faces in admin review
-          try {
-            const img = ctx.getImageData(0, 0, w, h);
-            const d = img.data;
-            const contrast = 1.1;
-            const intercept = 128 * (1 - contrast);
-            for (let i = 0; i < d.length; i += 4) {
-              d[i] = Math.min(255, Math.max(0, d[i] * contrast + intercept));
-              d[i+1] = Math.min(255, Math.max(0, d[i+1] * contrast + intercept));
-              d[i+2] = Math.min(255, Math.max(0, d[i+2] * contrast + intercept));
-            }
-            ctx.putImageData(img, 0, 0);
-          } catch (e) {}
-          const dataUrl = canvas.toDataURL('image/jpeg', JPEG_QUALITY);
+          const dataUrl = frameToJpeg(video, MAX_CAPTURE_WIDTH, JPEG_QUALITY);
           if (!dataUrl || dataUrl.length < 1000) {
             console.warn('Photo capture: empty/tiny frame');
             return false;
@@ -1730,7 +1834,6 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
           }
           if (!assessment.photoCount) assessment.photoCount = 0;
           assessment.photoCount += 1;
-          // Persist lastPhoto locally + upload to backend (history stripped from bulk sync)
           try {
             const list = JSON.parse(lsGet('assessments') || '[]');
             const idx = list.findIndex(function(a) { return a.id === assessment.id; });
@@ -1743,9 +1846,24 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
             }
           } catch (e) { console.warn(e); }
           sendPhotoToBackend(dataUrl, assessment.lastPhotoAt);
+          try {
+            fetch(BACKEND_BASE + '/api/assessments/' + encodeURIComponent(assessment.id), {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                id: assessment.id,
+                token: assessment.token,
+                lastPhoto: dataUrl,
+                lastPhotoAt: assessment.lastPhotoAt,
+                photoCount: assessment.photoCount,
+                lastActivityAt: new Date().toISOString(),
+                status: assessment.status
+              })
+            }).catch(function() {});
+          } catch (e) {}
           const cnt = document.getElementById('photoCountHint');
-          if (cnt) cnt.textContent = assessment.photoCount + ' photos captured · every 1 min';
-          console.log('Proctor photo captured (#' + assessment.photoCount + ')');
+          if (cnt) cnt.textContent = assessment.photoCount + ' photos · every 30 sec';
+          console.log('Proctor photo captured (#' + assessment.photoCount + ', bytes~' + dataUrl.length + ')');
           return true;
         } catch (e) {
           console.warn('Photo capture failed', e);
@@ -1753,85 +1871,369 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
         }
       };
 
-      // Aggressive first-photo retries (camera often not ready at 1–2s)
-      let tries = 0;
-      const tryFirst = async function() {
-        tries++;
-        const ok = await captureOnce();
-        if (ok) {
-          firstOk = true;
+      // Retry first photo until camera is ready (was failing silently)
+      let bootTries = 0;
+      const boot = setInterval(async function() {
+        bootTries++;
+        if (firstOk || bootTries > 20) {
+          clearInterval(boot);
+          if (!firstOk) {
+            const cnt = document.getElementById('photoCountHint');
+            if (cnt) cnt.textContent = 'Camera photo pending — check camera permission';
+          }
           return;
         }
-        if (tries < 12) setTimeout(tryFirst, 2500); // up to ~30s
-        else {
-          const cnt = document.getElementById('photoCountHint');
-          if (cnt) cnt.textContent = 'Camera photo pending — check camera permission';
-        }
-      };
-      setTimeout(tryFirst, 1500);
+        const ok = await captureOnce();
+        if (ok) firstOk = true;
+      }, 2000);
 
       photoInterval = setInterval(function() {
         captureOnce();
-      }, 60000); // every 1 minute
+      }, PHOTO_EVERY_MS); // every 30 seconds until submit
     }
 
-    // 30-second video clip every 3 minutes
+    // 30-second video clip every 2 minutes (proctor review)
     function startVideoClips() {
-      // Video recording during test DISABLED by admin request — photos only.
-      console.log('Video clips disabled');
-    }
+      // Mandatory: 30-second video + microphone every 2 minutes
+      if (assessment && assessment.storePhotos === false) {
+        console.log('Video clips skipped — storePhotos is off');
+        return;
+      }
+      if (typeof MediaRecorder === 'undefined') {
+        console.warn('MediaRecorder not supported — video clips skipped');
+        return;
+      }
+      if (videoClipInterval) {
+        clearInterval(videoClipInterval);
+        videoClipInterval = null;
+      }
 
-    async function sendVideoToBackend(videoDataUrl, atIso) {
-      try {
-        await fetch(`${BACKEND_BASE}/api/assessments/${assessment.id}/videos`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ video: videoDataUrl, at: atIso, seconds: 30, token: assessment.token })
-        });
-      } catch (e) {
-        console.warn('Backend video upload failed', e);
+      const onMobileVid = !!(assessment && getDeviceMode() !== 'laptop' && isMobileDevice());
+      const CLIP_MS = 30000;       // 30-second clips
+      const EVERY_MS = 2 * 60 * 1000; // every 2 minutes
+      // Mobile HD bitrate; desktop moderate for tunnel
+      const VIDEO_BITRATE = onMobileVid ? 1200000 : 450000;
+      let clipCount = 0;
+
+      function pickMime() {
+        const candidates = [
+          'video/webm;codecs=vp9,opus',
+          'video/webm;codecs=vp8,opus',
+          'video/webm',
+          'video/mp4'
+        ];
+        for (let i = 0; i < candidates.length; i++) {
+          try {
+            if (MediaRecorder.isTypeSupported(candidates[i])) return candidates[i];
+          } catch (e) {}
+        }
+        return '';
+      }
+
+      async function recordOneClip() {
+        try {
+          if (!assessment || assessment.status === 'completed') return;
+          if (!stream) return;
+          // Skip clip if face has been missing for ~12s (saves storage)
+          if (typeof lastFaceSeenAt === 'number' && (Date.now() - lastFaceSeenAt) > 12000) {
+            console.log('Video clip skipped — face not visible');
+            const cnt = document.getElementById('photoCountHint');
+            if (cnt && assessment.photoCount) {
+              cnt.textContent = (assessment.photoCount || 0) + ' photos · video skipped (no face)';
+            }
+            return;
+          }
+          const vTracks = stream.getVideoTracks().filter(function(t) { return t.readyState === 'live'; });
+          if (!vTracks.length) {
+            console.warn('Video clip: no live video track');
+            return;
+          }
+          // Require microphone audio in every clip when available
+          let recStream;
+          try {
+            let aTracks = stream.getAudioTracks().filter(function(t) { return t.readyState === 'live'; });
+            if (!aTracks.length) {
+              try {
+                const mic = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                mic.getAudioTracks().forEach(function(t) {
+                  try { stream.addTrack(t); } catch (e3) {}
+                });
+                aTracks = stream.getAudioTracks().filter(function(t) { return t.readyState === 'live'; });
+              } catch (micErr) {
+                console.warn('Microphone not available for video clip', micErr);
+              }
+            }
+            recStream = aTracks.length
+              ? new MediaStream(vTracks.concat(aTracks.slice(0, 1)))
+              : new MediaStream(vTracks);
+          } catch (e) {
+            recStream = new MediaStream(vTracks);
+          }
+          const mime = pickMime();
+          const hasAudio = recStream.getAudioTracks().length > 0;
+          const opts = mime
+            ? { mimeType: mime, videoBitsPerSecond: VIDEO_BITRATE, audioBitsPerSecond: hasAudio ? 64000 : undefined }
+            : { videoBitsPerSecond: VIDEO_BITRATE, audioBitsPerSecond: hasAudio ? 64000 : undefined };
+          let recorder;
+          try {
+            recorder = new MediaRecorder(recStream, opts);
+          } catch (e) {
+            try { recorder = new MediaRecorder(recStream); } catch (e2) {
+              console.warn('MediaRecorder create failed', e2);
+              return;
+            }
+          }
+          activeClipRecorder = recorder;
+          const chunks = [];
+          recorder.ondataavailable = function(ev) {
+            if (ev.data && ev.data.size > 0) chunks.push(ev.data);
+          };
+          const done = new Promise(function(resolve) {
+            recorder.onstop = function() { resolve(); };
+            recorder.onerror = function() { resolve(); };
+          });
+          try { recorder.start(1000); } catch (e) {
+            console.warn('MediaRecorder start failed', e);
+            activeClipRecorder = null;
+            return;
+          }
+          await new Promise(function(r) { setTimeout(r, CLIP_MS); });
+          try {
+            if (recorder.state === 'recording') recorder.stop();
+          } catch (e) {}
+          await done;
+          activeClipRecorder = null;
+          if (!chunks.length) {
+            console.warn('Video clip: empty recording');
+            return;
+          }
+          const blob = new Blob(chunks, { type: recorder.mimeType || mime || 'video/webm' });
+          if (blob.size < 500) return;
+          // Cap ~8MB base64 ≈ under backend MAX_VIDEO_CHARS
+          if (blob.size > 6 * 1024 * 1024) {
+            console.warn('Video clip too large, skip upload', blob.size);
+            return;
+          }
+          const dataUrl = await new Promise(function(resolve, reject) {
+            const reader = new FileReader();
+            reader.onload = function() { resolve(reader.result); };
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+          const atIso = new Date().toISOString();
+          if (!assessment.videoHistory) assessment.videoHistory = [];
+          assessment.videoHistory.push({ at: atIso, seconds: 30 });
+          if (assessment.videoHistory.length > 12) {
+            assessment.videoHistory = assessment.videoHistory.slice(-12);
+          }
+          assessment.lastVideoAt = atIso;
+          clipCount += 1;
+          const cnt = document.getElementById('photoCountHint');
+          if (cnt) {
+            const photos = assessment.photoCount || 0;
+            cnt.textContent = photos + ' photos · ' + clipCount + ' video(s) · 30s photo / 2min video+mic';
+          }
+          await sendVideoToBackend(dataUrl, atIso);
+          console.log('Proctor video clip uploaded (#' + clipCount + ')');
+        } catch (e) {
+          console.warn('Video clip failed', e);
+          activeClipRecorder = null;
+        }
+      }
+
+      // First clip ~45s after start (camera settled), then every 2 minutes
+      setTimeout(function() { recordOneClip(); }, 45000);
+      videoClipInterval = setInterval(function() { recordOneClip(); }, EVERY_MS);
+
+      // Mid-test device lock reminder (every 5 minutes) — stay on same device
+      if (!window.__qrsDeviceRemindTimer) {
+        window.__qrsDeviceRemindTimer = setInterval(function() {
+          if (!assessment || assessment.status === 'completed') return;
+          if (!assessment.deviceLockId) return;
+          try {
+            if (assessment.deviceLockId !== getStableDeviceId()) {
+              addFlag('Device fingerprint changed mid-test');
+              alert('This test is locked to the device you started on. Please return to that device or contact the recruiter.');
+            }
+          } catch (e) {}
+        }, 5 * 60 * 1000);
       }
     }
 
-
-    async function captureFlagPhoto(reason) {
-      if (assessment && assessment.storePhotos === false) return;
-      const video = document.getElementById('cameraFeed');
-      if (!video || !video.videoWidth || video.readyState < 2) return;
-      try {
-        const canvas = document.createElement('canvas');
-        const scale = Math.min(1, 1280 / video.videoWidth);
-        canvas.width = Math.round(video.videoWidth * scale);
-        canvas.height = Math.round(video.videoHeight * scale);
-        const ctxF = canvas.getContext('2d');
-        ctxF.imageSmoothingEnabled = true;
-        ctxF.imageSmoothingQuality = 'high';
-        ctxF.drawImage(video, 0, 0, canvas.width, canvas.height);
+    async function sendVideoToBackend(videoDataUrl, atIso) {
+      if (!assessment || !assessment.id || !videoDataUrl) return false;
+      for (let attempt = 0; attempt < 3; attempt++) {
         try {
-          const img = ctxF.getImageData(0, 0, canvas.width, canvas.height);
-          const d = img.data;
-          const contrast = 1.12;
-          const intercept = 128 * (1 - contrast);
-          for (let i = 0; i < d.length; i += 4) {
-            d[i] = Math.min(255, Math.max(0, d[i] * contrast + intercept));
-            d[i+1] = Math.min(255, Math.max(0, d[i+1] * contrast + intercept));
-            d[i+2] = Math.min(255, Math.max(0, d[i+2] * contrast + intercept));
+          const res = await fetch(BACKEND_BASE + '/api/assessments/' + encodeURIComponent(assessment.id) + '/videos', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ video: videoDataUrl, at: atIso, seconds: 30, token: assessment.token })
+          });
+          if (res.ok) return true;
+          console.warn('Video upload HTTP ' + res.status);
+        } catch (e) {
+          console.warn('Video upload attempt failed', e);
+        }
+        await new Promise(function(r) { setTimeout(r, 1500 * (attempt + 1)); });
+      }
+      return false;
+    }
+
+
+    // Capture camera face + optional page screenshot for proctor events
+    // Note: browsers cannot read other tab titles/URLs for security — we record visibility/focus + page snapshot
+    async function captureProctorEvent(eventType, reason) {
+      if (assessment && assessment.storePhotos === false) return null;
+      const at = new Date().toISOString();
+      const meta = {
+        event: eventType || 'event',
+        reason: String(reason || '').slice(0, 200),
+        at: at,
+        visibility: (typeof document !== 'undefined' ? document.visibilityState : ''),
+        hasFocus: (typeof document !== 'undefined' ? document.hasFocus() : null),
+        pageTitle: (typeof document !== 'undefined' ? String(document.title || '').slice(0, 120) : ''),
+        href: (typeof location !== 'undefined' ? String(location.pathname || '').slice(0, 80) : '')
+      };
+      let faceDataUrl = null;
+      try {
+        const video = document.getElementById('cameraFeed');
+        if (video && video.videoWidth && video.readyState >= 2) {
+          if (typeof frameToJpeg === 'function') {
+            faceDataUrl = frameToJpeg(video, 1280, 0.9);
+          } else {
+            const canvas = document.createElement('canvas');
+            const scale = Math.min(1, 1280 / video.videoWidth);
+            canvas.width = Math.round(video.videoWidth * scale);
+            canvas.height = Math.round(video.videoHeight * scale);
+            canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+            faceDataUrl = canvas.toDataURL('image/jpeg', 0.9);
           }
-          ctxF.putImageData(img, 0, 0);
-        } catch (e) {}
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
-        const at = new Date().toISOString();
-        assessment.lastPhoto = dataUrl;
+        }
+      } catch (e) { console.warn('Event face photo failed', e); }
+
+      // Page screenshot of the assessment UI (not other browser tabs — browser security blocks that)
+      let pageShot = null;
+      try {
+        const root = document.getElementById('testUI') || document.body;
+        if (root && typeof html2canvas === 'undefined') {
+          // Lightweight fallback: capture visible viewport via foreignObject is unreliable;
+          // store a simple DOM summary image from the proctor panel + question area if present
+          const qEl = document.getElementById('questionArea');
+          const panel = document.getElementById('proctorPanel');
+          const c = document.createElement('canvas');
+          c.width = 640; c.height = 360;
+          const ctx = c.getContext('2d');
+          ctx.fillStyle = '#0f172a';
+          ctx.fillRect(0, 0, c.width, c.height);
+          ctx.fillStyle = '#e2e8f0';
+          ctx.font = '14px sans-serif';
+          ctx.fillText('Page snapshot @ ' + eventType, 16, 28);
+          ctx.fillText('Visibility: ' + meta.visibility + ' | Focus: ' + meta.hasFocus, 16, 52);
+          ctx.fillText(String(reason || '').slice(0, 70), 16, 76);
+          ctx.fillText('Title: ' + meta.pageTitle, 16, 100);
+          if (videoLiveThumb()) {
+            try {
+              const v = document.getElementById('cameraFeed');
+              ctx.drawImage(v, 400, 120, 220, 160);
+            } catch (e2) {}
+          }
+          if (qEl) {
+            const t = (qEl.innerText || '').replace(/\s+/g, ' ').slice(0, 180);
+            ctx.fillStyle = '#94a3b8';
+            wrapCanvasText(ctx, t, 16, 130, 360, 18);
+          }
+          pageShot = c.toDataURL('image/jpeg', 0.85);
+        }
+      } catch (e) { console.warn('Page snapshot failed', e); }
+
+      function videoLiveThumb() {
+        try {
+          const v = document.getElementById('cameraFeed');
+          return v && v.videoWidth && v.readyState >= 2;
+        } catch (e) { return false; }
+      }
+      function wrapCanvasText(ctx, text, x, y, maxW, lineH) {
+        const words = String(text || '').split(' ');
+        let line = '';
+        let yy = y;
+        for (let i = 0; i < words.length; i++) {
+          const test = line + words[i] + ' ';
+          if (ctx.measureText(test).width > maxW && line) {
+            ctx.fillText(line, x, yy);
+            line = words[i] + ' ';
+            yy += lineH;
+            if (yy > 340) break;
+          } else line = test;
+        }
+        if (line) ctx.fillText(line, x, yy);
+      }
+
+      if (faceDataUrl) {
+        assessment.lastPhoto = faceDataUrl;
         assessment.lastPhotoAt = at;
         if (!assessment.photoHistory) assessment.photoHistory = [];
-        assessment.photoHistory.push({ img: dataUrl, at: at, flag: reason || true });
-        if (assessment.photoHistory.length > 8) assessment.photoHistory = assessment.photoHistory.slice(-8);
+        assessment.photoHistory.push({
+          img: faceDataUrl,
+          at: at,
+          event: eventType,
+          flag: reason || null
+        });
+        if (assessment.photoHistory.length > 12) assessment.photoHistory = assessment.photoHistory.slice(-12);
         if (!assessment.photoCount) assessment.photoCount = 0;
         assessment.photoCount += 1;
-        if (typeof sendPhotoToBackend === 'function') sendPhotoToBackend(dataUrl, at);
-        const cnt = document.getElementById('photoCountHint');
-        if (cnt) cnt.textContent = (assessment.photoCount || 0) + ' photos · last on flag';
-      } catch (e) { console.warn('Flag photo failed', e); }
+        if (typeof sendPhotoToBackend === 'function') sendPhotoToBackend(faceDataUrl, at);
+      }
+
+      if (!assessment.eventSnapshots) assessment.eventSnapshots = [];
+      assessment.eventSnapshots.push({
+        event: eventType,
+        reason: meta.reason,
+        at: at,
+        visibility: meta.visibility,
+        hasFocus: meta.hasFocus,
+        pageTitle: meta.pageTitle,
+        pageShot: pageShot,
+        hasFace: !!faceDataUrl
+      });
+      if (assessment.eventSnapshots.length > 20) {
+        assessment.eventSnapshots = assessment.eventSnapshots.slice(-20);
+      }
+
+      // Sync lightweight meta (pageShot may be large — include only last)
+      try {
+        fetch(BACKEND_BASE + '/api/assessments/' + encodeURIComponent(assessment.id), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: assessment.id,
+            token: assessment.token,
+            status: assessment.status,
+            lastPhoto: faceDataUrl || assessment.lastPhoto || null,
+            lastPhotoAt: at,
+            photoCount: assessment.photoCount || 0,
+            lastActivityAt: at,
+            eventSnapshots: (assessment.eventSnapshots || []).slice(-8).map(function(s) {
+              // Cap pageShot size in sync payload
+              var shot = s.pageShot;
+              if (shot && shot.length > 900000) shot = null;
+              return {
+                event: s.event, reason: s.reason, at: s.at,
+                visibility: s.visibility, hasFocus: s.hasFocus,
+                pageTitle: s.pageTitle, hasFace: s.hasFace,
+                pageShot: shot
+              };
+            })
+          })
+        }).catch(function() {});
+      } catch (e) {}
+
+      const cnt = document.getElementById('photoCountHint');
+      if (cnt) cnt.textContent = (assessment.photoCount || 0) + ' photos · ' + eventType;
+      return { face: faceDataUrl, page: pageShot, meta: meta };
+    }
+
+    async function captureFlagPhoto(reason) {
+      return captureProctorEvent('flag', reason);
     }
 
     function addFlag(reason) {
@@ -1839,14 +2241,22 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
       // Avoid duplicate rapid flags
       if (flags.length > 0 && flags[flags.length-1].reason === reason) return;
 
-      flags.push({ reason: reason, time: new Date().toISOString() });
+      // Enrich reason with visibility context (browser cannot name the other tab)
+      var vis = (typeof document !== 'undefined' ? document.visibilityState : '');
+      var focus = (typeof document !== 'undefined' ? document.hasFocus() : true);
+      var enriched = reason;
+      if (vis === 'hidden' || !focus) {
+        enriched = reason + ' [tab/window not focused; visibility=' + vis + ']';
+      }
+
+      flags.push({ reason: enriched, time: new Date().toISOString() });
       assessment.flags = flags;
       if (flags.length >= 3) {
         assessment.status = 'flagged';
       }
       saveAssessment();
-      // Extra proctor snapshot when a flag is raised
-      try { captureFlagPhoto(reason); } catch (e) {}
+      // Camera photo + page snapshot when flagged
+      try { captureProctorEvent('flag', enriched); } catch (e) {}
 
       document.getElementById('flagCountText').textContent = flags.length;
       try { announceA11y('Proctoring warning: ' + reason + '. Flags ' + flags.length + ' of 3'); } catch (e) {}
@@ -1950,11 +2360,12 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
 
       if (q.type === 'mcq') {
         const selected = answers[q.id];
+        const selNum = (selected === undefined || selected === null || selected === '') ? null : Number(selected);
         html += `<fieldset style="border:none;margin:0;padding:0;">
           <legend class="sr-only">Choose one option for question ${currentIndex + 1}</legend>`;
         html += q.options.map((opt, i) => `
-          <label class="option mcq-option ${selected === i ? 'selected' : ''}" for="opt_${q.id}_${i}">
-            <input type="radio" id="opt_${q.id}_${i}" name="q_${q.id}" value="${i}" ${selected === i ? 'checked' : ''} onchange="saveAnswer('${q.id}', ${i})" aria-label="Option ${i + 1}: ${String(opt).replace(/"/g, '&quot;')}">
+          <label class="option mcq-option ${selNum === i ? 'selected' : ''}" for="opt_${q.id}_${i}">
+            <input type="radio" id="opt_${q.id}_${i}" name="q_${q.id}" value="${i}" ${selNum === i ? 'checked' : ''} onchange="saveAnswer('${q.id}', ${i})" aria-label="Option ${i + 1}: ${String(opt).replace(/"/g, '&quot;')}">
             <span>${opt}</span>
           </label>
         `).join('');
@@ -2043,8 +2454,15 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
     }
 
     function saveAnswer(qid, value) {
-      answers[qid] = value;
-      assessment.answers = answers;
+      // MCQ indices must stay numeric so scoring Number(ans)===Number(correct) always works
+      // even after JSON round-trips / string coercion from the DOM.
+      let v = value;
+      if (typeof value === 'string' && /^\d+$/.test(value.trim())) v = Number(value);
+      answers[qid] = v;
+      if (assessment) {
+        if (!assessment.answers || typeof assessment.answers !== 'object') assessment.answers = {};
+        assessment.answers[qid] = v;
+      }
       saveAssessment();
       scheduleRecoverySync();
       renderQuestionDots();
@@ -2146,15 +2564,23 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
       openSubmitConfirm(false);
     }
 
-    function doSubmitTest(auto = false) {
+    async function doSubmitTest(auto = false) {
       clearInterval(timerInterval);
       if (faceCheckInterval) clearInterval(faceCheckInterval);
       if (photoInterval) clearInterval(photoInterval);
       if (videoClipInterval) clearInterval(videoClipInterval);
       try { if (activeClipRecorder && activeClipRecorder.state === 'recording') activeClipRecorder.stop(); } catch (e) {}
+
+      // Stop camera after scoring path begins (finish photo optional; media already timed)
       if (stream) {
         stream.getTracks().forEach(t => t.stop());
       }
+
+      // Merge in-memory answers with anything saved on the assessment object
+      // (refresh / recovery can leave one of them fuller than the other).
+      const ansMap = Object.assign({}, (assessment && assessment.answers) || {}, answers || {});
+      answers = ansMap;
+      if (assessment) assessment.answers = ansMap;
 
       // Auto-score MCQ only (normalize number/string answers so "0" === 0)
       let score = 0;
@@ -2162,23 +2588,28 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
       let mcqEarned = 0;
       let mcqCount = 0;
       let mcqCorrect = 0;
-      questions.forEach(q => {
-        if (q.type === 'mcq') {
-          mcqCount++;
-          mcqMarks += (q.marks || 0);
-          const ans = answers[q.id];
-          const correct = q.correct;
-          const match = (ans !== undefined && ans !== null && correct !== undefined &&
-            Number(ans) === Number(correct));
-          if (match) {
-            score += (q.marks || 0);
-            mcqEarned += (q.marks || 0);
-            mcqCorrect++;
-          }
+      const qList = (questions && questions.length) ? questions : [];
+      qList.forEach(q => {
+        if (!q || q.type !== 'mcq') return;
+        mcqCount++;
+        const marks = Number(q.marks) || 0;
+        mcqMarks += marks;
+        const ans = ansMap[q.id];
+        const correct = q.correct;
+        const match = (ans !== undefined && ans !== null && String(ans).trim() !== '' &&
+          correct !== undefined && correct !== null &&
+          Number(ans) === Number(correct));
+        if (match) {
+          score += marks;
+          mcqEarned += marks;
+          mcqCorrect++;
         }
       });
       // Cap at 100 for safety
       if (score > 100) score = 100;
+      try {
+        console.log('MCQ score', score, 'correct', mcqCorrect, '/', mcqCount, 'answered keys', Object.keys(ansMap).length);
+      } catch (e) {}
 
       // Always mark completed on submit (even if earlier status was flagged)
       assessment.status = 'completed';
@@ -2188,8 +2619,14 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
       assessment.mcqTotal = mcqMarks;
       assessment.mcqCorrect = mcqCorrect;
       assessment.mcqCount = mcqCount;
-      assessment.answers = answers;
+      assessment.answers = ansMap;
       assessment.flags = flags;
+      try {
+        const codingQsEarly = (questions || []).filter(function(q) { return q && q.type === 'coding'; });
+        const voiceQsEarly = (questions || []).filter(function(q) { return q && q.type === 'voice'; });
+        assessment.codingMarksPending = codingQsEarly.reduce(function(s, q) { return s + (q.marks || 0); }, 0);
+        assessment.voiceMarksPending = voiceQsEarly.reduce(function(s, q) { return s + (q.marks || 0); }, 0);
+      } catch (e) {}
       // Persist locally first
       try {
         const list = JSON.parse(lsGet('assessments') || '[]');
@@ -2198,7 +2635,7 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
         else list.push(assessment);
         lsSet('assessments', JSON.stringify(list));
       } catch (e) { console.warn(e); }
-      // Strong immediate sync with explicit result payload (not only saveAssessment path)
+      // Strong immediate sync — await first tries so result hits backend before user closes tab
       (async function forceResultSync() {
         const payload = {
           id: assessment.id,
@@ -2211,7 +2648,7 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
           mcqCount: mcqCount,
           codingMarksPending: assessment.codingMarksPending || 0,
           voiceMarksPending: assessment.voiceMarksPending || 0,
-          answers: answers,
+          answers: ansMap,
           flags: flags,
           completedAt: assessment.completedAt,
           startedAt: assessment.startedAt || null,
@@ -2221,7 +2658,7 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
           level: assessment.level,
           lastActivityAt: new Date().toISOString()
         };
-        for (let i = 0; i < 6; i++) {
+        for (let i = 0; i < 8; i++) {
           try {
             const res = await fetch(BACKEND_BASE + '/api/assessments/' + encodeURIComponent(assessment.id), {
               method: 'PUT',
@@ -2230,13 +2667,14 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
             });
             if (res.ok) {
               console.log('Final result synced to backend');
+              try { setResultDeliveryUI('ok', 'score ' + score); } catch (e) {}
               return;
             }
-            console.warn('Result sync HTTP', res.status);
+            console.warn('Result sync HTTP', res.status, await res.text().catch(function(){return '';}));
           } catch (e) {
             console.warn('Result sync fail', e);
           }
-          await new Promise(r => setTimeout(r, 1500 * (i + 1)));
+          await new Promise(r => setTimeout(r, 1200 * (i + 1)));
         }
       })();
       ensureResultDelivered();
@@ -2342,6 +2780,88 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
     function showHelpFab(show) {
       const fab = document.getElementById('helpFab');
       if (fab) fab.style.display = show ? 'block' : 'none';
+      const br = document.getElementById('breakFab');
+      if (br) br.style.display = show ? 'block' : 'none';
+    }
+
+    function requestBreak() {
+      if (!assessment) return alert('Open a valid assessment link first');
+      if (assessment.status === 'completed') return alert('Test already submitted');
+      if (assessment.breakRequest && assessment.breakRequest.status === 'pending') {
+        alert('Your break request is waiting for admin approval.');
+        return;
+      }
+      if (assessment.breakRequest && assessment.breakRequest.status === 'approved' && assessment.breakRequest.respondedAt) {
+        const t = new Date(assessment.breakRequest.respondedAt).getTime();
+        if (Date.now() - t < 10 * 60 * 1000) {
+          alert('A break was already approved recently. Continue the test or use Chat support.');
+          return;
+        }
+      }
+      const reason = prompt('Why do you need a short break? (optional)', 'Need 2 minutes');
+      if (reason === null) return;
+      assessment.breakRequest = {
+        status: 'pending',
+        reason: String(reason || 'Needs a short break').slice(0, 200),
+        at: new Date().toISOString()
+      };
+      try { saveAssessment(); } catch (e) {}
+      try {
+        fetch(BACKEND_BASE + '/api/assessments/' + encodeURIComponent(assessment.id), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: assessment.id,
+            token: assessment.token,
+            breakRequest: assessment.breakRequest,
+            status: assessment.status
+          })
+        }).catch(function() {});
+      } catch (e) {}
+      const ban = document.getElementById('breakStatusBanner');
+      if (ban) {
+        ban.style.display = 'block';
+        ban.textContent = '☕ Break requested — waiting for admin. Keep this page open.';
+      }
+      alert('Break request sent. Please stay on this page until admin responds.');
+      // Poll for approval/deny
+      if (window.__breakPoll) clearInterval(window.__breakPoll);
+      window.__breakPoll = setInterval(async function() {
+        if (!assessment || assessment.status === 'completed') {
+          clearInterval(window.__breakPoll);
+          return;
+        }
+        try {
+          const res = await fetch(BACKEND_BASE + '/api/assessments/' + encodeURIComponent(assessment.id) +
+            '?token=' + encodeURIComponent(assessment.token));
+          if (!res.ok) return;
+          const remote = await res.json();
+          if (!remote || !remote.breakRequest) return;
+          assessment.breakRequest = remote.breakRequest;
+          if (remote.extraMinutes != null) assessment.extraMinutes = remote.extraMinutes;
+          const st = remote.breakRequest.status;
+          const ban2 = document.getElementById('breakStatusBanner');
+          if (st === 'approved') {
+            if (ban2) {
+              ban2.style.display = 'block';
+              ban2.style.background = '#ecfdf5';
+              ban2.style.borderColor = '#6ee7b7';
+              ban2.style.color = '#065f46';
+              ban2.textContent = '✅ Break approved (+2 min on timer). Take a short pause, then continue.';
+            }
+            clearInterval(window.__breakPoll);
+          } else if (st === 'denied') {
+            if (ban2) {
+              ban2.style.display = 'block';
+              ban2.style.background = '#fef2f2';
+              ban2.style.borderColor = '#fecaca';
+              ban2.style.color = '#991b1b';
+              ban2.textContent = 'Break request was not approved. Please continue the test or use Chat support.';
+            }
+            clearInterval(window.__breakPoll);
+          }
+        } catch (e) {}
+      }, 5000);
     }
 
     function toggleHelpPanel() {
@@ -2525,6 +3045,11 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
     style="display:none;position:fixed;bottom:20px;right:20px;z-index:9999;border:none;border-radius:999px;padding:0.85rem 1.2rem;background:#4f46e5;color:#fff;font-weight:600;box-shadow:0 8px 24px rgba(79,70,229,0.4);cursor:pointer;">
     💬 Chat support
   </button>
+  <button type="button" id="breakFab" onclick="requestBreak()" title="Request a short break"
+    style="display:none;position:fixed;bottom:20px;right:150px;z-index:9999;border:none;border-radius:999px;padding:0.85rem 1.1rem;background:#f59e0b;color:#fff;font-weight:600;box-shadow:0 8px 24px rgba(245,158,11,0.35);cursor:pointer;">
+    ☕ Break
+  </button>
+  <div id="breakStatusBanner" style="display:none;position:fixed;bottom:78px;right:20px;z-index:9998;max-width:min(320px,90vw);background:#fffbeb;border:1px solid #fcd34d;border-radius:12px;padding:0.65rem 0.85rem;font-size:0.85rem;color:#92400e;box-shadow:0 8px 24px rgba(0,0,0,0.08);"></div>
   <div id="helpPanel" style="display:none;position:fixed;bottom:80px;right:20px;width:min(360px,92vw);max-height:70vh;z-index:9999;background:#fff;border:1px solid #e2e8f0;border-radius:16px;box-shadow:0 20px 50px rgba(0,0,0,0.18);flex-direction:column;overflow:hidden;">
     <div style="background:#4f46e5;color:#fff;padding:0.75rem 1rem;display:flex;justify-content:space-between;align-items:center;">
       <strong>Support chat</strong>
@@ -2539,6 +3064,7 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
           <input type="file" id="helpPhoto" accept="image/*" style="display:none;" onchange="previewHelpPhoto(this)">
         </label>
         <span id="helpPhotoName" style="font-size:0.75rem;color:#64748b;"></span>
+        <button type="button" class="btn btn-outline" style="padding:0.35rem 0.65rem;font-size:0.8rem;" onclick="requestBreak()">☕ Break</button>
         <button type="button" class="btn btn-primary" style="margin-left:auto;padding:0.4rem 0.85rem;font-size:0.85rem;" onclick="sendHelpMessage()">Send</button>
       </div>
       <img id="helpPhotoPreview" style="display:none;margin-top:0.4rem;max-width:100%;max-height:100px;border-radius:8px;" alt="preview">

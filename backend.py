@@ -441,12 +441,13 @@ def attach_client_meta(body, existing=None):
 # overwrote HR's edits.
 CANDIDATE_PROTECTED = {
     "id", "token", "name", "email", "mobile", "role", "level", "createdAt", "expiresAt", "scheduledAt", "linkValidFrom",
-    "linkValidityHours", "duration", "extraMinutes", "allowMobile", "storePhotos", "totalMarks",
+    "linkValidityHours", "duration", "extraMinutes", "allowMobile", "deviceMode", "storePhotos", "totalMarks",
     "finalScore", "finalScoreBy", "finalScoreAt", "voiceScore", "codingScore", "codingEffort",
     "adminNote", "hrReplyToNote", "hrReplyShareOnCard", "hrReplyAt", "resultCardToken",
     "resultCardCreatedAt", "resultCardExpiresAt", "resultCardRevealed", "resultCardHours",
     "flagsCleared", "photoHistory", "videoHistory",
-    "lastPhoto", "lastPhotoAt", "lastVideoAt",
+    # lastPhoto / lastPhotoAt / lastVideoAt are allowed from candidates so proctor
+    # previews still update if the dedicated /photos or /videos upload fails.
 }
 # Hidden from the candidate's own GET (internal HR data + heavy media)
 CANDIDATE_HIDDEN = {
@@ -537,10 +538,24 @@ def merge_assessment(existing, body, is_admin):
             continue
         if k == "score" and (v is None or v == "") and existing.get("score") is not None:
             continue
+        # Never let a stale client zero-out a real MCQ score after it was saved
+        if k == "score" and not is_admin:
+            try:
+                new_s = float(v) if v is not None and v != "" else None
+                old_s = float(existing["score"]) if existing.get("score") is not None and existing.get("score") != "" else None
+            except (TypeError, ValueError):
+                new_s, old_s = None, None
+            if new_s == 0 and old_s is not None and old_s > 0 and existing.get("status") == "completed":
+                continue
         if k == "completedAt" and not v and existing.get("completedAt"):
             continue
         if k in ("answers", "flags", "helpMessages"):
             continue  # handled below
+        # Candidate may refresh lastPhoto preview without wiping server history
+        if k == "lastPhoto" and not v and existing.get("lastPhoto"):
+            continue
+        if k == "photoHistory" and not v and existing.get("photoHistory"):
+            continue
         merged[k] = v
 
     # answers: never let a stale/partial sync wipe or roll back saved answers
@@ -587,13 +602,33 @@ def merge_assessment(existing, body, is_admin):
                     and existing.get("status") != "completed"):
                 merged["status"] = "in-progress"
 
-    # completed is sticky
+    # Candidate may move pending → in-progress / flagged (live status for admin)
+    if not is_admin and body.get("status") in ("in-progress", "flagged"):
+        if existing.get("status") in (None, "", "pending", "in-progress", "flagged"):
+            if existing.get("status") != "completed":
+                merged["status"] = body.get("status")
+                if body.get("startedAt") and not merged.get("startedAt"):
+                    merged["startedAt"] = body.get("startedAt")
+                if body.get("lastActivityAt"):
+                    merged["lastActivityAt"] = body.get("lastActivityAt")
+    # completed is sticky — accept score 0 and empty-string-safe fields
     if body.get("status") == "completed" and (is_admin or existing.get("status") != "completed"):
         merged["status"] = "completed"
-        if body.get("score") is not None:
-            merged["score"] = body.get("score")
+        if "score" in body and body.get("score") is not None and body.get("score") != "":
+            try:
+                merged["score"] = float(body.get("score"))
+            except (TypeError, ValueError):
+                merged["score"] = body.get("score")
+        for k in ("mcqScore", "mcqTotal", "mcqCorrect", "mcqCount", "codingMarksPending", "voiceMarksPending"):
+            if k in body and body.get(k) is not None:
+                merged[k] = body.get(k)
         if body.get("completedAt"):
             merged["completedAt"] = body.get("completedAt")
+        elif not merged.get("completedAt"):
+            merged["completedAt"] = datetime.utcnow().isoformat() + "Z"
+        if body.get("answers") and isinstance(body.get("answers"), dict):
+            # Prefer candidate's final answers map on first completion
+            merged["answers"] = body.get("answers")
     if existing.get("status") == "completed":
         if merged.get("status") in ("pending", "in-progress", "expired", "missed", "flagged"):
             merged["status"] = "completed"
@@ -738,7 +773,7 @@ def update_settings(fn):
         return data
 
 
-MAX_PHOTO_CHARS = 4_000_000
+MAX_PHOTO_CHARS = 5_000_000
 MAX_VIDEO_CHARS = 30_000_000
 
 
@@ -1572,6 +1607,7 @@ def create_assessment():
         "lastVideoAt": body.get("lastVideoAt"),
         "videoHistory": body.get("videoHistory") or [],
         "allowMobile": bool(body.get("allowMobile")),
+        "deviceMode": (body.get("deviceMode") or ("both" if body.get("allowMobile") else "laptop")),
         "storePhotos": body.get("storePhotos") if body.get("storePhotos") is not None else True,
         "linkValidFrom": body.get("linkValidFrom"),
         "totalMarks": body.get("totalMarks") or 100,
@@ -1657,7 +1693,8 @@ def update_assessment(aid):
             # A candidate starting/finishing a test that is still 'pending' after the link
             # expired is rejected here even if the browser-side check was bypassed.
             leaving_pending = body.get("status") in ("in-progress", "completed") and existing.get("status") == "pending"
-            if leaving_pending and is_link_expired(existing):
+            # Allow start if link not expired OR candidate already has a start time (resume)
+            if leaving_pending and is_link_expired(existing) and not body.get("startedAt") and not existing.get("startedAt"):
                 return jsonify({"ok": False, "error": "This link has expired."}), 403
         saved = upsert_assessment(aid, body, merge_existing=True, is_admin=bool(admin_rec))
         if not admin_rec:
