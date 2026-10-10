@@ -1,49 +1,31 @@
-QRS 2nd Round Assessment - HOW TO START
-========================================
+QRS Assessment - How to start (Windows)
+=======================================
 
-ADMIN LOGIN
-  Username : admin
-  Password : qrs@2026
+1. Install once:      pip install -r requirements.txt
+                      winget install --id Cloudflare.cloudflared
+2. Double-click:      START-SERVER.bat      (keep this window open)
+3. Double-click:      START-TUNNEL.bat      (keep this window open too)
+   (or just double-click START-ALL.bat to do 2 + 3 together)
+4. Copy the https://xxxx.trycloudflare.com address from the tunnel window.
+5. Open  https://xxxx.trycloudflare.com/admin.html  and log in.
+   (Opening admin on localhost also works: it will show a bar asking for
+    the public address, or fill it in automatically when the tunnel runs.)
+6. Create a candidate and copy the link. Links start with the public address.
 
-----------------------------------------
-A) TEST ON YOUR OWN PC ONLY (localhost)
-----------------------------------------
-1. Extract this folder
-2. Open terminal in this folder
-3. pip install -r requirements.txt
-4. python backend.py
-5. Open:  http://localhost:5000
-6. Admin: http://localhost:5000/admin.html
+SCHEDULED TESTS (e.g. 10:30)
+- The test opens at the scheduled time and the server also refuses an early start.
+- Times in emails now include the timezone; check it matches the candidate's.
+- Changing the schedule in Admin -> Edit now moves the expiry automatically
+  (expiry = new start + link validity). Check "Link expires" before saving.
+- Before the test: make sure the PC will NOT sleep (Windows: Settings ->
+  System -> Power -> Screen and sleep -> "Never" while plugged in).
 
-IMPORTANT:
-  Links like http://localhost:5000/test.html?... 
-  work ONLY on the same computer.
-  Candidates on other phones/PCs cannot open localhost.
-
-----------------------------------------
-B) SHARE LINKS WITH CANDIDATES (FREE PUBLIC URL)
-----------------------------------------
-Deploy the backend for FREE on Koyeb (recommended — no sleep, ~100GB/month
-free bandwidth vs Render's 5GB). Full steps: see KOYEB-DEPLOY.txt
-
-Quick version:
-1. Create free account at https://www.koyeb.com (no card needed)
-2. Create Web Service → connect this project's GitHub repo
-3. Builder: Buildpack (default) — it reads Procfile automatically
-4. Deploy → you get a URL like:
-   https://qrs-assessment-yourname.koyeb.app
-5. Open that URL for Admin
-6. Generated candidate links will look like:
-   https://qrs-assessment-yourname.koyeb.app/test.html?id=...&token=...
-   These work for ANY candidate on any device.
-
-(Render.com works the same way if you prefer it — see RENDER-DEPLOY.txt —
-but its free tier's bandwidth limit is easy to hit once candidates start
-uploading photos/video.)
-
-----------------------------------------
-TROUBLESHOOTING "can't reach this page"
-----------------------------------------
-- Server not running → start with: python backend.py
-- Using localhost on another device → use your Koyeb (or Render) public URL instead
-- Wrong port → use http://localhost:5000 (not 8080) when using backend.py
+IMPORTANT
+- The tunnel address changes every time you restart START-TUNNEL.bat, and old
+  links stop working. Create candidate links AFTER the tunnel is running, and
+  resend (Admin -> Resend) if you ever restart it.
+- Your PC must stay on, awake and online while candidates take the test.
+- Candidate data is saved in the "data" folder. Use Admin -> Backup regularly.
+- Change the default admin password after first login (Admin -> Settings).
+  To seed a different first-run password, set QRS_ADMIN_PASSWORD and
+  QRS_COORD_PASSWORD before the very first start.

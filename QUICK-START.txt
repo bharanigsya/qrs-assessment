@@ -1,0 +1,42 @@
+QRS Assessment - SIMPLE DAILY USE
+=================================
+
+ONE CLICK (recommended)
+-----------------------
+1. Double-click:  START-ALL.bat
+2. Wait ~10 seconds
+3. In the YELLOW "QRS-Tunnel" window, copy:
+      https://something.trycloudflare.com
+4. Open:
+      https://something.trycloudflare.com/admin.html
+5. Log in with your admin account
+6. Create assessment -> copy link -> send to candidate
+
+When exams are finished -> close the two windows.
+
+
+ONLY ON YOUR PC (no candidates outside)
+---------------------------------------
+Double-click START-SERVER.bat
+Open:  http://localhost:5000/admin.html
+
+
+LIGHT MODE (already set)
+------------------------
+- No video
+- Photo only if candidate is flagged
+- Less storage, faster
+
+
+IMPORTANT
+---------
+- Every time you restart the tunnel, the domain CHANGES
+- Always create/resend links AFTER you start START-ALL.bat
+- Old trycloudflare.com links die when you close the tunnel
+- Keep the PC awake (no sleep) until every candidate has finished
+
+
+FIRST TIME ONLY
+---------------
+pip install -r requirements.txt
+winget install --id Cloudflare.cloudflared

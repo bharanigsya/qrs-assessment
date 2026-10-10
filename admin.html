@@ -351,7 +351,7 @@
       </div>
       <div id="loginError" class="alert alert-danger" style="display:none; margin-top:0.8rem;"></div>
       <button class="btn btn-primary" style="width:100%; margin-top:0.8rem;" onclick="doLogin()">Login Securely</button>
-      <p style="text-align:center;margin-top:1rem;font-size:0.78rem;color:#94a3b8;">First time? Admin: admin / qrs@2026 · Coordinator: coordinator / qrs@coord — change these under Settings once logged in.</p>
+      <p style="text-align:center;margin-top:1rem;font-size:0.78rem;color:#94a3b8;">Forgot your password? Ask the system owner. Change default passwords under Settings after first login.</p>
       <p style="margin-top:0.6rem; font-size:0.75rem; color:#94a3b8; text-align:center;">
         Admin full access · Coordinator: assign + results + flags only
       </p>
@@ -2349,7 +2349,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       let scheduledAt = null;
       if (scheduledDate) {
         if (scheduledDate.getTime() < Date.now()) {
-          if (!confirm('Scheduled start is in the past. Link will unlock immediately and stay valid for ' + linkValidityHours + ' hour(s) from now. Continue?')) return;
+          if (!confirm('The scheduled start you picked (' + scheduledDate.toLocaleString() + ') is already in the past (now: ' + new Date().toLocaleString() + ').\n\nIf you continue, the schedule lock is REMOVED: the link opens immediately and stays valid for ' + linkValidityHours + ' hour(s) from now.\n\nPress Cancel to go back and pick a future time.')) return;
           scheduledAt = null; // past schedule = no lock; avoid computing expiry from a past time
         } else {
           scheduledAt = scheduledDate.toISOString();
@@ -2368,7 +2368,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       }
 
       const id = 'ASMT-' + Date.now().toString(36).toUpperCase();
-      const token = Math.random().toString(36).substring(2, 12);
+      const token = secureToken();
 
       const record = {
         id, token, name, email, mobile, role, level,
@@ -2409,7 +2409,10 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         const fullUrl = window.location.origin + window.location.pathname.replace(/admin\.html.*/, '') + link;
         document.getElementById('testLink').href = fullUrl;
         document.getElementById('testLink').textContent = fullUrl;
-        const unlockText = scheduledAt ? new Date(scheduledAt).toLocaleString() : 'Available immediately (no schedule lock)';
+        const unlockText = scheduledAt ? fmtDateTimeTz(scheduledAt) : 'Available immediately (no schedule lock)';
+        const tempHostWarn = /trycloudflare\.com$/i.test(location.hostname)
+          ? '<div class="alert alert-warning" style="margin-top:0.55rem;">⚠️ This link uses a <strong>temporary tunnel address</strong>. It stops working if the tunnel window is closed/restarted, the PC sleeps or restarts. Keep START-ALL running until the candidate finishes — if you restart the tunnel, create/resend the link again.</div>'
+          : '';
         const dm = (typeof readDeviceModeFromForm === 'function') ? readDeviceModeFromForm() : 'laptop';
         const mobileBadge = (typeof deviceModeLabel === 'function')
           ? deviceModeLabel(dm)
@@ -2420,11 +2423,11 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
           '<div style="margin-top:0.65rem;padding:0.85rem 1rem;background:#eef2ff;border:1px solid #c7d2fe;border-radius:12px;font-size:0.9rem;line-height:1.55;">' +
           '<div style="font-weight:700;margin-bottom:0.4rem;color:#3730a3;">Link timing</div>' +
           '<div><strong>Unlocks (candidate can start):</strong> ' + unlockText + '</div>' +
-          '<div><strong>Expires (link stops working):</strong> ' + new Date(expiresAt).toLocaleString() + '</div>' +
+          '<div><strong>Expires (link stops working):</strong> ' + fmtDateTimeTz(expiresAt) + '</div>' +
           '<div style="margin-top:0.35rem;">' + mobileBadge + '</div>' +
           '<div><strong>Valid for:</strong> ' + linkValidityHours + ' hour(s) from ' + (scheduledAt ? 'scheduled start' : 'now') + '</div>' +
           '<div><strong>Test duration:</strong> ' + duration + ' minutes (timer inside exam)</div>' +
-          '</div>' +
+          '</div>' + tempHostWarn +
           (synced ? '<div class="alert alert-success" style="margin-top:0.55rem;">Saved to server (Postgres).</div>' :
             '<div class="alert alert-danger" style="margin-top:0.6rem;">Saved in this browser, but server sync failed. Candidate on another device may see Invalid Link. <button class="btn btn-outline" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="syncRecordToBackend(getAssessments().find(a=>a.id===\'' + id + '\')).then(ok=>alert(ok?\'Synced\':\'Still failed — re-login and try Restore\'))">Retry sync</button></div>');
         if (typeof logActivity === 'function') logActivity('Assigned assessment', name + ' / ' + role + ' / ' + level);
@@ -2480,8 +2483,8 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
             email: record.email,
             link: fullUrl,
             duration: record.duration,
-            expiresAtLabel: record.expiresAt ? new Date(record.expiresAt).toLocaleString() : null,
-            unlockAtLabel: record.scheduledAt ? new Date(record.scheduledAt).toLocaleString() : null,
+            expiresAtLabel: record.expiresAt ? fmtDateTimeTz(record.expiresAt) : null,
+            unlockAtLabel: record.scheduledAt ? fmtDateTimeTz(record.scheduledAt) : null,
             validityHours: record.linkValidityHours,
             subject: opts.subject || ('Congratulations! Your QRS 2nd Round Assessment Link — ' + (record.role || ''))
           })
@@ -2819,7 +2822,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       if (record.scheduledAt) {
         const sched = new Date(record.scheduledAt);
         const isToday = sched.toDateString() === new Date().toDateString();
-        const timeStr = sched.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const timeStr = sched.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' });
         startLine = isToday
           ? 'The assessment will start today at ' + timeStr + '.'
           : 'The assessment will start on ' + sched.toLocaleDateString() + ' at ' + timeStr + '.';
@@ -2945,7 +2948,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         }
 
         const id = 'ASMT-' + Date.now().toString(36).toUpperCase() + '-' + i;
-        const token = Math.random().toString(36).substring(2, 12);
+        const token = secureToken();
         const bulkDmEl = document.getElementById('bulkDeviceMode');
         const bulkDm = (bulkDmEl && bulkDmEl.value === 'mobile') ? 'mobile'
           : ((bulkDmEl && bulkDmEl.value === 'both') ? 'both' : 'laptop');
@@ -3291,6 +3294,43 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
     }
 
 
+    // ---- QRS fixes: shared time/token helpers ----
+    function secureToken() {
+      try {
+        const b = new Uint8Array(16);
+        crypto.getRandomValues(b);
+        return Array.from(b, function(x) { return x.toString(16).padStart(2, '0'); }).join('');
+      } catch (e) {
+        return Math.random().toString(36).slice(2, 12) + Math.random().toString(36).slice(2, 12);
+      }
+    }
+    // Same rule the candidate page (test.html) and backend use: ISO with Z or no offset = UTC
+    function parseUtcMsAdmin(ts) {
+      if (!ts) return NaN;
+      let t = String(ts).trim();
+      if (!t) return NaN;
+      if (!/[zZ]$/.test(t) && !/[+-]\d{2}:?\d{2}$/.test(t) && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(t)) t = t + 'Z';
+      return new Date(t).getTime();
+    }
+    // Effective link expiry = later of stored expiresAt and (validFrom + validity hours).
+    // MUST stay identical to isAssessmentLinkExpired() in test.html and is_link_expired() in backend.py.
+    function effectiveExpiryMs(a) {
+      let exp = parseUtcMsAdmin(a.expiresAt);
+      const hours = Number(a.linkValidityHours) || 24;
+      const from = parseUtcMsAdmin(a.linkValidFrom) || parseUtcMsAdmin(a.scheduledAt) || parseUtcMsAdmin(a.createdAt);
+      if (!isNaN(from)) {
+        const rebuilt = from + hours * 3600000;
+        if (isNaN(exp) || rebuilt > exp) exp = rebuilt;
+      }
+      return exp;
+    }
+    // Date + time WITH timezone, so emails/labels are unambiguous across regions
+    function fmtDateTimeTz(iso) {
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return '';
+      return d.toLocaleString([], { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' });
+    }
+
     function toLocalInputValue(iso) {
       if (!iso) return '';
       const d = new Date(iso);
@@ -3323,8 +3363,43 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       list[idx].status = st;
       const sched = document.getElementById('editScheduledAt').value;
       const exp = document.getElementById('editExpiresAt').value;
-      list[idx].scheduledAt = sched ? new Date(sched).toISOString() : null;
-      list[idx].expiresAt = exp ? new Date(exp).toISOString() : list[idx].expiresAt;
+      {
+        // Keep scheduledAt / expiresAt / linkValidFrom consistent. Previously only scheduledAt
+        // changed, so moving a candidate to a later day left the OLD expiry in place and the
+        // link showed "expired" at the new start time.
+        const rec = list[idx];
+        const hrs = Number(rec.linkValidityHours) || 24;
+        const oldSchedMs = rec.scheduledAt ? new Date(rec.scheduledAt).getTime() : null;
+        const oldExpMs = rec.expiresAt ? new Date(rec.expiresAt).getTime() : null;
+        const newSchedMs = sched ? new Date(sched).getTime() : null;
+        let newExpMs = exp ? new Date(exp).getTime() : oldExpMs;
+        if (sched && isNaN(newSchedMs)) return alert('Please enter a valid scheduled start.');
+        if (exp && isNaN(newExpMs)) return alert('Please enter a valid expiry time.');
+        // inputs have minute resolution, so compare by minute
+        const sameMin = function(x, y) {
+          if (x == null && y == null) return true;
+          if (x == null || y == null || isNaN(x) || isNaN(y)) return false;
+          return Math.floor(x / 60000) === Math.floor(y / 60000);
+        };
+        const schedChanged = !sameMin(newSchedMs, oldSchedMs);
+        const expTouched = !sameMin(newExpMs, oldExpMs);
+        if (schedChanged && newSchedMs != null && !expTouched) newExpMs = newSchedMs + hrs * 3600000;
+        if (newSchedMs != null && newExpMs != null && newExpMs <= newSchedMs) {
+          return alert('Link expiry must be AFTER the scheduled start time.');
+        }
+        rec.scheduledAt = newSchedMs != null ? new Date(newSchedMs).toISOString() : null;
+        if (newExpMs != null && (schedChanged || expTouched)) {
+          rec.expiresAt = new Date(newExpMs).toISOString();
+          // linkValidFrom = expiry - validity, so the "later of stored vs rebuilt" rule yields
+          // exactly the expiry the admin chose (this also makes SHORTENING an expiry work).
+          rec.linkValidFrom = new Date(newExpMs - hrs * 3600000).toISOString();
+          // Re-opening a missed/expired candidate by giving a future expiry
+          if ((st === 'missed' || st === 'expired') && newExpMs > Date.now() && !rec.startedAt) {
+            rec.status = 'pending';
+            rec.statusNote = (rec.statusNote ? rec.statusNote + ' · ' : '') + 'Re-opened by admin (schedule/expiry changed)';
+          }
+        }
+      }
       list[idx].statusNote = (document.getElementById('editStatusNote').value || '').trim();
       const fsRaw = document.getElementById('editFinalScore') ? document.getElementById('editFinalScore').value : '';
       if (fsRaw !== '' && fsRaw !== null && fsRaw !== undefined) {
@@ -4476,7 +4551,7 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
         if (idx === -1) return alert('Candidate not found');
 
         const a = list[idx];
-        const newToken = Math.random().toString(36).substring(2, 12);
+        const newToken = secureToken();
         a.token = newToken;
         a.linkValidityHours = a.linkValidityHours || 24;
         const now = Date.now();
@@ -4526,7 +4601,7 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
         const box = document.getElementById('resendResult-' + id);
         if (box) {
           const unlockText = (a.scheduledAt && new Date(a.scheduledAt).getTime() > Date.now())
-            ? new Date(a.scheduledAt).toLocaleString() : 'Available immediately';
+            ? fmtDateTimeTz(a.scheduledAt) : 'Available immediately';
           const { subject, body } = buildCandidateEmailText(a, fullUrl);
           box.innerHTML =
             '<div class="alert alert-success">' +
@@ -5579,12 +5654,9 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
       const graceMs = 10 * 60 * 1000; // avoid false "missed" from small clock skew
       list.forEach(a => {
         if (!a || a.status === 'completed' || a.status === 'in-progress' || a.status === 'flagged' || a.status === 'missed') return;
-        let expTs = null;
-        if (a.expiresAt) {
-          let t = String(a.expiresAt).trim();
-          if (t && !/[zZ]$/.test(t) && !/[+-]\d{2}:?\d{2}$/.test(t) && /^\d{4}-\d{2}-\d{2}T/.test(t)) t = t + 'Z';
-          expTs = new Date(t).getTime();
-        }
+        // Same rule as test.html / backend (later of stored vs validFrom+hours), so a candidate
+        // is never marked "missed" while their link still works for them.
+        const expTs = effectiveExpiryMs(a);
         if (!expTs || isNaN(expTs) || expTs + graceMs >= now) return;
         if (a.status === 'pending' && !a.startedAt) {
           a.status = 'missed';

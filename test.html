@@ -301,7 +301,7 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
     // Prefer same origin (correct on any Render URL). Override via localStorage key qrs_backend_base.
     const DEFAULT_BACKEND_BASE = (typeof location !== 'undefined' && location.origin && location.protocol !== 'file:')
       ? location.origin.replace(/\/$/, '')
-      : 'https://YOUR-APP.koyeb.app';
+      : 'http://localhost:5000';
     function resolveTestBackendBase() {
       try {
         const s = localStorage.getItem('qrs_backend_base');
@@ -509,7 +509,9 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
       // Get the backend's own clock first, so expiry/schedule checks below aren't fooled
       // by a candidate's device having the wrong date/time.
       try {
-        const healthRes = await fetch(`${BACKEND_BASE}/api/health`);
+        const clockT0 = Date.now();
+        const healthRes = await fetch(`${BACKEND_BASE}/api/health`, { cache: 'no-store' });
+        const clockT1 = Date.now();
         if (healthRes.ok) {
           const health = await healthRes.json();
           if (health && health.time) {
@@ -520,10 +522,13 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
             }
             const serverMs = new Date(t).getTime();
             if (!isNaN(serverMs)) {
-              let off = serverMs - Date.now();
-              // Ignore absurd offsets (bad parse) — keep device clock
-              if (Math.abs(off) > 3 * 60 * 60 * 1000) {
-                console.warn('Server clock offset too large (' + Math.round(off/60000) + ' min) — using device time');
+              // Server time is trusted (UTC, always has Z). Compare against the MIDPOINT of the
+              // request so network latency doesn't skew it. The old +/-3h cap is removed: a
+              // device clock more than 3h wrong (the exact case this guards) was being ignored,
+              // causing false "locked"/"expired" screens. Only a >30-day gap is treated as a bad parse.
+              let off = serverMs - (clockT0 + (clockT1 - clockT0) / 2);
+              if (Math.abs(off) > 30 * 24 * 60 * 60 * 1000) {
+                console.warn('Server clock offset implausible (' + Math.round(off/60000) + ' min) — using device time');
                 off = 0;
               }
               serverOffsetMs = off;
@@ -655,7 +660,7 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
           document.getElementById('notYetUI').style.display = 'block';
           showHelpFab(true);
           const leftMin = Math.max(1, Math.ceil((scheduledMs - nowMs()) / 60000));
-          const unlockAt = new Date(assessment.scheduledAt);
+          const unlockAt = new Date(scheduledMs); // same UTC parsing as the lock check above
           document.getElementById('notYetMsg').innerHTML =
             '<div style="font-size:1.05rem;margin-bottom:0.5rem;">Locked until <strong>' + unlockAt.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) + '</strong> <span style="font-size:0.85rem;color:#64748b;">(' + (Intl.DateTimeFormat().resolvedOptions().timeZone || 'local') + ')</span></div>' +
             '<div id="lockCountdown" style="font-size:1.6rem;font-weight:700;color:#4f46e5;margin:0.5rem 0;">--:--:--</div>' +

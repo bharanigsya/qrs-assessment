@@ -20,7 +20,7 @@ import threading
 import time
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from flask import Flask, request, jsonify, send_from_directory, abort
 from flask_cors import CORS
@@ -32,6 +32,11 @@ ADMIN_FILE = os.path.join(BASE, "data", "admin.json")
 SETTINGS_FILE = os.path.join(BASE, "data", "settings.json")
 BACKUP_DIR = os.path.join(BASE, "data", "backups")
 MAX_BACKUPS = 30
+
+# First-run passwords. Set QRS_ADMIN_PASSWORD / QRS_COORD_PASSWORD env vars BEFORE the first
+# start to seed different ones. (Existing accounts are never changed by this.)
+DEFAULT_ADMIN_PASSWORD = os.environ.get("QRS_ADMIN_PASSWORD") or "qrs@2026"
+DEFAULT_COORD_PASSWORD = os.environ.get("QRS_COORD_PASSWORD") or "qrs@coord"
 
 def _clean_database_url(raw):
     """Normalize DATABASE_URL from Render/Supabase env (quotes, newlines, scheme)."""
@@ -222,8 +227,8 @@ def db_init():
             cur.execute(
                 "INSERT INTO admin_users (username, password, role) VALUES (%s,%s,%s), (%s,%s,%s) "
                 "ON CONFLICT (username) DO NOTHING",
-                ("admin", generate_password_hash("qrs@2026"), "admin",
-                 "coordinator", generate_password_hash("qrs@coord"), "coordinator"),
+                ("admin", generate_password_hash(DEFAULT_ADMIN_PASSWORD), "admin",
+                 "coordinator", generate_password_hash(DEFAULT_COORD_PASSWORD), "coordinator"),
             )
         # One-time migrate from local JSON if DB empty and file has data
         cur.execute("SELECT COUNT(*) FROM assessments")
@@ -259,8 +264,8 @@ def ensure_data():
             json.dump(
                 {
                     "users": [
-                        {"user": "admin", "pass": generate_password_hash("qrs@2026"), "role": "admin"},
-                        {"user": "coordinator", "pass": generate_password_hash("qrs@coord"), "role": "coordinator"},
+                        {"user": "admin", "pass": generate_password_hash(DEFAULT_ADMIN_PASSWORD), "role": "admin"},
+                        {"user": "coordinator", "pass": generate_password_hash(DEFAULT_COORD_PASSWORD), "role": "coordinator"},
                     ]
                 },
                 f,
@@ -1033,8 +1038,12 @@ def parse_iso_utc_naive(ts):
     if not ts:
         return None
     try:
-        dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
-        return dt.replace(tzinfo=None)
+        dt = datetime.fromisoformat(str(ts).strip().replace("Z", "+00:00"))
+        if dt.tzinfo is not None:
+            # Convert real offsets (e.g. +05:30) to UTC. The old code just dropped the offset,
+            # which shifted any such timestamp by the offset (5.5h for IST).
+            dt = dt.astimezone(timezone.utc)
+        return dt.replace(tzinfo=None)  # naive values are treated as UTC (how the server stores them)
     except Exception:
         return None
 
@@ -1693,9 +1702,21 @@ def update_assessment(aid):
             # A candidate starting/finishing a test that is still 'pending' after the link
             # expired is rejected here even if the browser-side check was bypassed.
             leaving_pending = body.get("status") in ("in-progress", "completed") and existing.get("status") == "pending"
-            # Allow start if link not expired OR candidate already has a start time (resume)
-            if leaving_pending and is_link_expired(existing) and not body.get("startedAt") and not existing.get("startedAt"):
-                return jsonify({"ok": False, "error": "This link has expired."}), 403
+            # Only the STORED start time counts for "resume". The old code also accepted a
+            # client-supplied body["startedAt"], which every normal start request contains, so
+            # the expiry check below never actually ran.
+            if leaving_pending and not existing.get("startedAt"):
+                if is_link_expired(existing):
+                    return jsonify({"ok": False, "error": "This link has expired."}), 403
+                # Server-side scheduled-start lock (the browser lock alone can be bypassed)
+                sched = parse_iso_utc_naive(existing.get("scheduledAt"))
+                if sched and datetime.utcnow() < sched - timedelta(seconds=15):
+                    return jsonify({
+                        "ok": False,
+                        "notYet": True,
+                        "opensAt": existing.get("scheduledAt"),
+                        "error": "This assessment has not opened yet. Please wait for the scheduled start time.",
+                    }), 403
         saved = upsert_assessment(aid, body, merge_existing=True, is_admin=bool(admin_rec))
         if not admin_rec:
             saved = {k: v for k, v in saved.items() if k not in CANDIDATE_HIDDEN}
@@ -1803,6 +1824,15 @@ if __name__ == "__main__":
     print(f" Storage: {'Postgres' if USE_DB else 'JSON file'}")
     print(f" Open: http://localhost:{port}")
     print(f" Admin: http://localhost:{port}/admin.html")
-    print(" Login: admin / qrs@2026")
+    print(" Login: see your admin account (change default passwords in Admin -> Settings)")
     print("=" * 50)
-    app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
+    try:
+        from waitress import serve as _waitress_serve
+    except ImportError:
+        _waitress_serve = None
+    if _waitress_serve:
+        print(" Server: waitress (production)")
+        _waitress_serve(app, host="0.0.0.0", port=port, threads=8)
+    else:
+        print(" Server: Flask dev server (pip install waitress for a sturdier one)")
+        app.run(host="0.0.0.0", port=port, debug=False, threaded=True)

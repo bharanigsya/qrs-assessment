@@ -63,7 +63,7 @@
   <script>
     const DEFAULT_BACKEND = (location.origin && location.protocol !== 'file:')
       ? location.origin.replace(/\/$/, '')
-      : 'https://YOUR-APP.koyeb.app';
+      : 'http://localhost:5000';
     function backendBase() {
       try {
         const s = localStorage.getItem('qrs_backend_base');
