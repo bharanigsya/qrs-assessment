@@ -327,6 +327,25 @@
     .skip-link:focus { left:0; outline:3px solid #fbbf24; }
     :focus-visible { outline:3px solid #4f46e5 !important; outline-offset:2px !important; }
     .sr-only { position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0; }
+
+    /* Just finished — green flash for ~30s after candidate submits */
+    tr.just-finished-row {
+      background: #ecfdf5 !important;
+      box-shadow: inset 3px 0 0 #059669;
+      animation: justFinishedPulse 1.2s ease-in-out 2;
+    }
+    tr.just-finished-row td { background: transparent !important; }
+    @keyframes justFinishedPulse {
+      0%, 100% { background-color: #ecfdf5; }
+      50% { background-color: #bbf7d0; }
+    }
+    .kpi-card.kpi-await {
+      cursor: pointer;
+      border: 1px solid #fbbf24;
+      background: linear-gradient(135deg, #fffbeb, #fff);
+    }
+    .kpi-card.kpi-await .kpi-value { color: #b45309; }
+    .kpi-card.kpi-await:hover { box-shadow: 0 4px 14px rgba(180, 83, 9, 0.12); }
   </style>
 </head>
 <body>
@@ -457,6 +476,8 @@
           <button class="btn btn-outline" onclick="downloadBackup()">⬇ Download Backup JSON</button>
           <button class="btn btn-primary" onclick="restoreLocalToBackend()">⬆ Restore browser → server</button>
           <button class="btn btn-outline" onclick="exportCSV()">Export CSV</button>
+          <button class="btn btn-outline" onclick="exportTodayResultsPdf()" title="Printable pack of today's completed results">📄 Today PDF pack</button>
+          <button class="btn btn-outline" onclick="markAllTodayReviewed()" title="Mark all of today's completed tests as reviewed">✓ Mark today reviewed</button>
           <button class="btn btn-outline" onclick="cleanupOldMedia(7)" title="Clear photos/videos older than 7 days">🧹 Clear media &gt;7 days</button>
           <button class="btn btn-outline" onclick="downloadAllMediaThenClear()" title="Save all photos/videos to your PC, then delete from server">💾 Download all media → clear server</button>
         </div>
@@ -465,8 +486,11 @@
           <div id="needsActionList"><p style="color:#64748b;font-size:0.9rem;">All clear.</p></div>
         </div>
         <div class="card" style="border:1px solid #fbbf24;background:#fffbeb;margin-bottom:1rem;">
-          <h2 class="card-title" style="color:#b45309;">⏳ Pending review <span id="pendingReviewCount" class="badge" style="background:#fef3c7;color:#92400e;">0</span></h2>
-          <p style="font-size:0.85rem;color:#64748b;margin:0 0 0.6rem;">Completed tests waiting for coding / voice marks (not final yet).</p>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+            <h2 class="card-title" style="color:#b45309;margin:0;">⏳ Awaiting review <span id="pendingReviewCount" class="badge" style="background:#fef3c7;color:#92400e;">0</span></h2>
+            <button type="button" class="btn btn-outline" style="padding:0.35rem 0.75rem;font-size:0.82rem;" onclick="openAwaitingReview()">Open list</button>
+          </div>
+          <p style="font-size:0.85rem;color:#64748b;margin:0.55rem 0 0.6rem;">Completed tests waiting for coding / voice marks (not final yet). Click a row to review.</p>
           <div id="pendingReviewList"><p style="color:#64748b;font-size:0.9rem;">None — all reviewed.</p></div>
         </div>
         <div class="kpi-strip" id="kpiStrip"></div>
@@ -1595,14 +1619,31 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       const flagged = list.filter(function(a) { return (a.flags && a.flags.length) || a.status === 'flagged'; }).length;
       const unread = list.filter(function(a) { return a.helpUnreadAdmin; }).length;
       const mediaN = countCandidatesWithMedia();
+      let awaitN = 0;
+      try {
+        if (typeof listPendingReview === 'function') awaitN = listPendingReview().length;
+      } catch (e) { awaitN = 0; }
       el.innerHTML =
         '<div class="kpi-card kpi-today"><div class="kpi-label">Today&apos;s tests</div><div class="kpi-value">' + todayTests + '</div></div>' +
         '<div class="kpi-card kpi-live"><div class="kpi-label">In progress</div><div class="kpi-value">' + inProg + '</div></div>' +
         '<div class="kpi-card"><div class="kpi-label">Completed today</div><div class="kpi-value">' + completedToday + '</div></div>' +
+        '<div class="kpi-card kpi-await" onclick="openAwaitingReview()" title="Open candidates needing coding/voice review">' +
+          '<div class="kpi-label">Awaiting review</div><div class="kpi-value">' + awaitN + '</div></div>' +
         '<div class="kpi-card kpi-flag"><div class="kpi-label">Flagged</div><div class="kpi-value">' + flagged + '</div></div>' +
         '<div class="kpi-card kpi-chat"><div class="kpi-label">Unread chat</div><div class="kpi-value">' + unread + '</div></div>' +
         '<div class="kpi-card"><div class="kpi-label">With media</div><div class="kpi-value">' + mediaN + '</div></div>';
       try { updateStorageMeter(); } catch (e) {}
+    }
+
+    function openAwaitingReview() {
+      try {
+        const btn = document.querySelector('[data-tab=dashboard]');
+        if (btn) switchTab('dashboard', btn);
+      } catch (e) {}
+      setTimeout(function() {
+        const card = document.getElementById('pendingReviewList');
+        if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 80);
     }
 
 
@@ -1698,6 +1739,25 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         // Don't re-upload full photo history on every save — the backend keeps its own
         // copy via the dedicated /photos endpoint and preserves it when this key is absent.
         const { photoHistory, videoHistory, ...payload } = record;
+        // Never push a weaker status from admin cache over a finished candidate
+        // (backend is sticky for completed, but avoid race noise)
+        if (payload.status === 'pending' || payload.status === 'missed' || payload.status === 'expired') {
+          try {
+            const chk = await fetch(`${BACKEND_BASE}/api/assessments/${record.id}`, { headers: authHeaders() });
+            if (chk.ok) {
+              const remote = await chk.json();
+              if (remote && (remote.status === 'completed' || remote.completedAt || remote.status === 'in-progress' || remote.status === 'flagged')) {
+                // Keep remote progress; only push non-status admin fields if needed
+                payload.status = remote.status;
+                if (remote.score != null && (payload.score == null || payload.score === '')) payload.score = remote.score;
+                if (remote.completedAt && !payload.completedAt) payload.completedAt = remote.completedAt;
+                if (remote.answers && Object.keys(remote.answers).length > Object.keys(payload.answers || {}).length) {
+                  payload.answers = remote.answers;
+                }
+              }
+            }
+          } catch (e) {}
+        }
         const res = await fetch(`${BACKEND_BASE}/api/assessments/${record.id}`, {
           method: 'PUT',
           headers: authHeaders({ 'Content-Type': 'application/json' }),
@@ -1940,6 +2000,16 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         if (!Array.isArray(remote)) return;
         const local = getAssessments();
         const warnEl = document.getElementById('dataLossWarning');
+        // Snapshot before merge so we can toast new completions / scores
+        const beforeMap = {};
+        local.forEach(function(a) {
+          if (!a || !a.id) return;
+          beforeMap[a.id] = {
+            status: a.status || 'pending',
+            score: a.score,
+            completedAt: a.completedAt || null
+          };
+        });
 
         const wiped = local.length > 0 && remote.length < Math.max(1, Math.floor(local.length * 0.5));
         if (wiped) {
@@ -1981,6 +2051,7 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
           local.forEach(a => { byId[a.id] = a; });
           remote.forEach(r => { byId[r.id] = mergeLiveFields(preferAssessment(byId[r.id], r), r); });
           lsSet('assessments', JSON.stringify(Object.values(byId)));
+          try { notifyNewCompletions(beforeMap, Object.values(byId)); } catch (e) {}
           return;
         }
 
@@ -1990,10 +2061,81 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
         const byId = {};
         local.forEach(a => { byId[a.id] = a; });
         remote.forEach(r => { byId[r.id] = mergeLiveFields(preferAssessment(byId[r.id], r), r); });
-        lsSet('assessments', JSON.stringify(Object.values(byId)));
+        const mergedList = Object.values(byId);
+        lsSet('assessments', JSON.stringify(mergedList));
+        try { notifyNewCompletions(beforeMap, mergedList); } catch (e) {}
       } catch (e) {
         console.warn('Backend pull failed (backend may not be running):', e);
       }
+    }
+
+    // IDs of candidates who just finished — green highlight in Results for 30s
+    var justFinishedUntil = {};
+
+    function notifyNewCompletions(beforeMap, afterList) {
+      if (!afterList || !afterList.length) return;
+      const newlyDone = [];
+      afterList.forEach(function(a) {
+        if (!a || !a.id) return;
+        const prev = beforeMap[a.id];
+        const nowDone = a.status === 'completed' || !!a.completedAt || (a.score != null && a.score !== '');
+        const wasDone = prev && (prev.status === 'completed' || prev.completedAt || (prev.score != null && prev.score !== ''));
+        if (nowDone && !wasDone) {
+          newlyDone.push(a);
+        } else if (prev && nowDone && prev.score !== a.score && a.score != null) {
+          newlyDone.push(a);
+        }
+      });
+      if (!newlyDone.length) return;
+      const until = Date.now() + 30000;
+      newlyDone.forEach(function(a) { justFinishedUntil[a.id] = until; });
+      const names = newlyDone.slice(0, 3).map(function(a) {
+        return (a.name || a.id) + (a.score != null ? (' (' + a.score + '/100)') : '');
+      }).join(', ');
+      try {
+        if (typeof showToast === 'function') {
+          showToast('✅ Result received: ' + names + (newlyDone.length > 3 ? (' +' + (newlyDone.length - 3) + ' more') : ''));
+        }
+      } catch (e) {}
+      // Sound + browser notification on submit (feature 4)
+      try {
+        if (typeof playAlertBeep === 'function') playAlertBeep();
+      } catch (e) {}
+      try {
+        if ('Notification' in window) {
+          if (Notification.permission === 'granted') {
+            newlyDone.slice(0, 3).forEach(function(a) {
+              new Notification('QRS — Assessment completed', {
+                body: (a.name || a.id) + ' · ' + (a.role || '') + ' · Score ' +
+                  (a.score != null ? a.score : '—') + '/100',
+                tag: 'qrs-done-' + a.id
+              });
+            });
+          } else if (Notification.permission === 'default') {
+            Notification.requestPermission();
+          }
+        }
+      } catch (e) {}
+      // If Results filter hides them (e.g. filterStatus=pending), clear it so score is visible
+      try {
+        const fs = document.getElementById('filterStatus');
+        if (fs && fs.value && fs.value !== 'completed') {
+          fs.value = '';
+        }
+      } catch (e) {}
+      try {
+        if (typeof renderResults === 'function') renderResults();
+      } catch (e) {}
+    }
+
+    function isJustFinished(id) {
+      const t = justFinishedUntil[id];
+      if (!t) return false;
+      if (Date.now() > t) {
+        delete justFinishedUntil[id];
+        return false;
+      }
+      return true;
     }
 
     function syncDefaultDuration() {
@@ -3552,9 +3694,11 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
       }
 
             document.getElementById('resultsTable').innerHTML = list.length ? list.map(a =>
-        '<tr>' +
+        '<tr class="' + (typeof isJustFinished === 'function' && isJustFinished(a.id) ? 'just-finished-row' : '') + '">' +
         (isAdmin() ? '<td><input type="checkbox" class="result-select" value="' + a.id + '"></td>' : '<td></td>') +
-        '<td><strong>' + a.name + '</strong><br><small style="color:#64748b">' + a.email + '</small></td>' +
+        '<td><strong>' + a.name + '</strong>' +
+          (typeof isJustFinished === 'function' && isJustFinished(a.id) ? ' <span class="badge" style="background:#059669;color:#fff;">Just finished</span>' : '') +
+          '<br><small style="color:#64748b">' + a.email + '</small></td>' +
         '<td>' + a.role + '</td><td><span class="badge badge-' + a.level + '">' + a.level + '</span></td>' +
         '<td>' + statusBadge(a.status, a) + (a.status === 'in-progress' ? ' <span class="badge" style="background:#d1fae5;color:#065f46;">● attending</span>' : '') + (a.lastActivityAt ? '<br><small style="color:#059669;">Last active: ' + new Date(a.lastActivityAt).toLocaleString() + '</small>' : (a.startedAt && a.status === 'in-progress' ? '<br><small style="color:#94a3b8;">Started: ' + new Date(a.startedAt).toLocaleString() + '</small>' : '')) + (a.status === 'completed' ? ' <span class="badge" style="background:#e0e7ff;color:#3730a3;">finished</span>' : '') + (a.statusNote ? '<br><small style="color:#9a3412;">' + a.statusNote + '</small>' : '') + (a.status === 'expired' && a.expiresAt ? '<br><small style="color:#9d174d;">Exp: ' + new Date(a.expiresAt).toLocaleString() + '</small>' : '') + (a.status === 'missed' ? '<br><small style="color:#c2410c;">Did not attend</small>' : '') + '</td><td>' + formatScoreCell(a) + '</td>' +
         '<td>' + resultBadge(a) + '</td>' +
@@ -4781,6 +4925,94 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
       showToast('CSV exported with scores, flags & media counts');
     }
 
+    /** Feature 7: mark all of today's completed candidates as reviewed (admin bookkeeping). */
+    function markAllTodayReviewed() {
+      const list = getAssessments();
+      const start = new Date(); start.setHours(0, 0, 0, 0);
+      const end = new Date(); end.setHours(23, 59, 59, 999);
+      const ids = [];
+      const who = ssGet('qrs_admin_user') || 'admin';
+      const nowIso = new Date().toISOString();
+      list.forEach(function(a) {
+        if (!a || a.status !== 'completed') return;
+        if (!a.completedAt) return;
+        const t = new Date(a.completedAt).getTime();
+        if (t < start.getTime() || t > end.getTime()) return;
+        if (a.reviewedAt) return;
+        a.reviewedAt = nowIso;
+        a.reviewedBy = who;
+        a.statusNote = (a.statusNote ? a.statusNote + ' · ' : '') + 'Marked reviewed (batch)';
+        ids.push(a.id);
+      });
+      if (!ids.length) {
+        alert('No completed tests today that still need a "reviewed" mark.\n\n(Already reviewed or none completed today.)');
+        return;
+      }
+      if (!confirm('Mark ' + ids.length + ' completed candidate(s) today as reviewed?\n\nThis is for your checklist only — scores are not changed.')) return;
+      lsSet('assessments', JSON.stringify(list));
+      if (typeof saveSomeAssessments === 'function') saveSomeAssessments(list, ids);
+      try { if (typeof logActivity === 'function') logActivity('Marked today reviewed', ids.length + ' candidates'); } catch (e) {}
+      refreshAll();
+      showToast('Marked ' + ids.length + ' as reviewed');
+    }
+
+    /** Feature 8: printable PDF pack of today's completed results (browser Print → Save as PDF). */
+    function exportTodayResultsPdf() {
+      const list = getAssessments();
+      const start = new Date(); start.setHours(0, 0, 0, 0);
+      const end = new Date(); end.setHours(23, 59, 59, 999);
+      const today = list.filter(function(a) {
+        if (!a || a.status !== 'completed') return false;
+        if (!a.completedAt) return false;
+        const t = new Date(a.completedAt).getTime();
+        return t >= start.getTime() && t <= end.getTime();
+      }).sort(function(a, b) {
+        return (Number(b.score) || 0) - (Number(a.score) || 0);
+      });
+      if (!today.length) {
+        alert('No completed assessments for today yet.');
+        return;
+      }
+      const esc = function(s) {
+        return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      };
+      const rows = today.map(function(a, i) {
+        const score = (typeof totalScore === 'function') ? totalScore(a) : (a.finalScore != null ? a.finalScore : a.score);
+        const flags = a.flags ? a.flags.length : 0;
+        return '<tr>' +
+          '<td>' + (i + 1) + '</td>' +
+          '<td><strong>' + esc(a.name) + '</strong><br><small>' + esc(a.email) + '</small></td>' +
+          '<td>' + esc(a.role) + ' / ' + esc(a.level) + '</td>' +
+          '<td><strong>' + (score != null ? score : '—') + '</strong>/100</td>' +
+          '<td>' + flags + '</td>' +
+          '<td>' + (a.tag ? esc(a.tag) : '—') + '</td>' +
+          '<td>' + (a.completedAt ? new Date(a.completedAt).toLocaleString() : '—') + '</td>' +
+          '</tr>';
+      }).join('');
+      const w = window.open('', '_blank');
+      if (!w) {
+        alert('Please allow pop-ups to open the PDF pack.');
+        return;
+      }
+      w.document.write('<!DOCTYPE html><html><head><title>QRS Today Results — ' +
+        new Date().toLocaleDateString() + '</title><style>' +
+        'body{font-family:Inter,system-ui,sans-serif;padding:24px;color:#0f172a}' +
+        'h1{font-size:1.35rem;margin:0 0 0.25rem} .muted{color:#64748b;font-size:0.9rem;margin-bottom:1rem}' +
+        'table{width:100%;border-collapse:collapse;font-size:0.88rem}' +
+        'th,td{border:1px solid #e2e8f0;padding:0.5rem 0.55rem;text-align:left}' +
+        'th{background:#f1f5f9;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.03em}' +
+        '@media print{button{display:none}}' +
+        '</style></head><body>' +
+        '<h1>QRS 2nd Round — Today\'s Results</h1>' +
+        '<p class="muted">Generated ' + new Date().toLocaleString() + ' · ' + today.length + ' completed</p>' +
+        '<table><thead><tr><th>#</th><th>Candidate</th><th>Role / Level</th><th>Score</th><th>Flags</th><th>Tag</th><th>Completed</th></tr></thead>' +
+        '<tbody>' + rows + '</tbody></table>' +
+        '<p style="margin-top:1.25rem"><button onclick="window.print()" style="padding:0.55rem 1.1rem;border:0;border-radius:8px;background:#4f46e5;color:#fff;font-weight:600;cursor:pointer">Print / Save as PDF</button></p>' +
+        '</body></html>');
+      w.document.close();
+      showToast('Today PDF pack opened — use Print → Save as PDF');
+    }
+
     function copyCandidateSummary(id) {
       const a = getAssessments().find(function(x) { return x.id === id; });
       if (!a) return;
@@ -5953,12 +6185,20 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
       } catch (e) { console.warn(e); }
     }
 
+    // Faster refresh while Live Monitoring tab is open (results appear sooner after submit)
     setInterval(async function() {
-      if (ssGet('qrs_admin_logged') === '1') {
-        await pullFromBackend();
-        refreshAll();
-      }
-    }, 8000);
+      if (ssGet('qrs_admin_logged') !== '1') return;
+      const liveOpen = document.getElementById('tab-live') && document.getElementById('tab-live').classList.contains('active');
+      const resultsOpen = document.getElementById('tab-results') && document.getElementById('tab-results').classList.contains('active');
+      // Always pull; interval is global — use 4s when watching live/results, else 8s
+      if (!window.__qrsLastPull) window.__qrsLastPull = 0;
+      const needFast = liveOpen || resultsOpen;
+      const gap = needFast ? 4000 : 8000;
+      if (Date.now() - window.__qrsLastPull < gap - 200) return;
+      window.__qrsLastPull = Date.now();
+      await pullFromBackend();
+      refreshAll();
+    }, 2000);
   </script>
 </body>
 </html>
