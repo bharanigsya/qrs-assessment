@@ -347,112 +347,171 @@
     .kpi-card.kpi-await .kpi-value { color: #b45309; }
     .kpi-card.kpi-await:hover { box-shadow: 0 4px 14px rgba(180, 83, 9, 0.12); }
 
-    /* ===== Pure UI v2 — sidebar admin shell ===== */
-    body { font-size: 15px; }
-    #adminApp { min-height: 100vh; background: #f1f5f9; }
-    body.theme-dark #adminApp { background: #0b1220; }
+    /* ===== Fresh unique UI — warm paper + teal ===== */
+    :root {
+      --q-teal: #0f766e;
+      --q-teal-soft: #ccfbf1;
+      --q-ink: #134e4a;
+      --q-paper: #f7f3ee;
+      --q-card: #fffdf9;
+      --q-coral: #e11d48;
+      --q-line: #e7e0d6;
+    }
+    body { font-size: 15px; background: var(--q-paper) !important; }
+    #adminApp { min-height: 100vh; background: var(--q-paper); }
+    body.theme-dark #adminApp { background: #0c1a19; }
     .admin-topbar {
       position: sticky; top: 0; z-index: 40;
-      background: #0f172a; color: #f8fafc;
-      border-bottom: 1px solid rgba(255,255,255,0.06);
-      padding: 0.65rem 1.1rem;
+      background: linear-gradient(105deg, #115e59 0%, #0f766e 45%, #134e4a 100%);
+      color: #ecfdf5;
+      border-bottom: 3px solid #f59e0b;
+      padding: 0.7rem 1.15rem;
       display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
     }
-    body.theme-dark .admin-topbar { background: #020617; }
-    .admin-topbar .logo { color: #f8fafc; font-size: 1.05rem; }
+    body.theme-dark .admin-topbar { background: #042f2e; border-bottom-color: #fbbf24; }
+    .admin-topbar .logo { color: #ecfdf5; font-size: 1.08rem; letter-spacing: -0.02em; }
+    .admin-topbar .logo-badge { background: #f59e0b !important; color: #422006 !important; }
     .admin-layout {
       display: grid;
-      grid-template-columns: 220px 1fr;
-      min-height: calc(100vh - 56px);
+      grid-template-columns: 1fr;
+      min-height: calc(100vh - 58px);
     }
     .admin-sidebar {
-      background: #0f172a;
-      color: #e2e8f0;
-      padding: 1rem 0.7rem 5rem;
-      border-right: 1px solid rgba(255,255,255,0.06);
+      background: #fffdf9;
+      color: var(--q-ink);
+      padding: 0.85rem 1rem 0.25rem;
+      border-right: none;
       position: sticky;
-      top: 56px;
-      height: calc(100vh - 56px);
-      overflow-y: auto;
+      top: 58px;
+      height: auto;
+      overflow-x: auto;
+      overflow-y: hidden;
+      display: flex;
+      flex-wrap: nowrap;
+      gap: 0.35rem;
+      align-items: center;
+      border-bottom: 1px solid var(--q-line);
+      z-index: 30;
     }
-    body.theme-dark .admin-sidebar { background: #020617; }
-    .admin-sidebar .nav-label {
-      font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em;
-      text-transform: uppercase; color: #64748b;
-      padding: 0.75rem 0.75rem 0.35rem;
-    }
+    body.theme-dark .admin-sidebar { background: #0c1a19; border-color: #1e3a38; }
+    .admin-sidebar .nav-label { display: none; }
     .admin-sidebar .tab-btn {
-      display: flex; align-items: center; gap: 0.5rem;
-      width: 100%; text-align: left;
-      padding: 0.55rem 0.75rem !important;
-      border-radius: 10px !important;
-      margin-bottom: 0.2rem;
-      color: #cbd5e1 !important;
-      background: transparent !important;
-      font-size: 0.88rem !important;
-      font-weight: 550;
-      border: none;
+      display: inline-flex; align-items: center; gap: 0.35rem;
+      width: auto !important; text-align: center;
+      padding: 0.45rem 0.8rem !important;
+      border-radius: 999px !important;
+      margin-bottom: 0;
+      color: #3f3f46 !important;
+      background: #f4f0ea !important;
+      font-size: 0.82rem !important;
+      font-weight: 650;
+      border: 1px solid transparent;
+      white-space: nowrap;
+      flex-shrink: 0;
     }
-    .admin-sidebar .tab-btn:hover { background: rgba(255,255,255,0.06) !important; color: #fff !important; }
+    .admin-sidebar .tab-btn:hover { background: #e7e0d6 !important; color: #134e4a !important; }
     .admin-sidebar .tab-btn.active {
-      background: #4f46e5 !important;
+      background: #0f766e !important;
       color: #fff !important;
-      box-shadow: 0 4px 14px rgba(79,70,229,0.35);
+      border-color: #0f766e;
+      box-shadow: 0 4px 14px rgba(15,118,110,0.28);
     }
     .admin-main {
-      padding: 1.15rem 1.35rem 5rem;
-      max-width: 1280px;
+      padding: 1.1rem 1.25rem 5rem;
+      max-width: 1200px;
+      margin: 0 auto;
+      width: 100%;
     }
     .admin-main .card, .admin-main .stat-card, .admin-main .chart-box {
-      border-radius: 16px;
-      border: 1px solid #e2e8f0;
-      box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+      border-radius: 18px;
+      border: 1px solid var(--q-line);
+      background: var(--q-card);
+      box-shadow: 0 2px 0 #ebe4da, 0 10px 28px rgba(19,78,74,0.05);
     }
+    .admin-main .btn-primary {
+      background: #0f766e !important;
+      border-color: #0f766e !important;
+    }
+    .admin-main .btn-primary:hover { background: #115e59 !important; }
     .admin-main .filter-bar {
-      position: sticky; top: 56px; z-index: 15;
-      background: rgba(241,245,249,0.92);
+      position: sticky; top: 118px; z-index: 15;
+      background: rgba(247,243,238,0.92);
       backdrop-filter: blur(8px);
-      padding: 0.65rem 0;
+      padding: 0.55rem 0;
       margin: 0 0 0.85rem;
-      border-bottom: 1px solid #e2e8f0;
+      border-bottom: 1px solid var(--q-line);
     }
-    body.theme-dark .admin-main .filter-bar { background: rgba(11,18,32,0.92); border-color: #1f2937; }
+    body.theme-dark .admin-main .filter-bar { background: rgba(12,26,25,0.92); border-color: #1e3a38; }
     .quick-actions-bar {
       background: transparent !important;
       border: none !important;
-      padding: 0 0 0.85rem !important;
-      margin-bottom: 0.5rem !important;
+      padding: 0 0 0.75rem !important;
+      margin-bottom: 0.35rem !important;
       position: static !important;
     }
-    /* Hide old horizontal tabs row (nav is sidebar now) */
     .admin-shell > .tabs { display: none !important; }
     .mobile-bottom-nav {
       display: none;
       position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
-      background: #0f172a; border-top: 1px solid rgba(255,255,255,0.08);
+      background: #115e59; border-top: 2px solid #f59e0b;
       padding: 0.35rem 0.4rem calc(0.35rem + env(safe-area-inset-bottom));
       justify-content: space-around; gap: 0.15rem;
     }
     .mobile-bottom-nav button {
-      flex: 1; border: none; background: transparent; color: #94a3b8;
+      flex: 1; border: none; background: transparent; color: #99f6e4;
       font-size: 0.68rem; font-weight: 600; padding: 0.4rem 0.2rem;
-      border-radius: 10px; cursor: pointer;
+      border-radius: 12px; cursor: pointer;
     }
-    .mobile-bottom-nav button.active { color: #a5b4fc; background: rgba(99,102,241,0.15); }
+    .mobile-bottom-nav button.active { color: #fff; background: rgba(255,255,255,0.14); }
     .mobile-bottom-nav button span { display: block; font-size: 1.1rem; margin-bottom: 0.1rem; }
     @media (max-width: 900px) {
-      .admin-layout { grid-template-columns: 1fr; }
-      .admin-sidebar { display: none; }
-      .admin-main { padding: 1rem 0.85rem 5.5rem; }
+      .admin-sidebar { top: 56px; padding: 0.55rem 0.65rem; }
+      .admin-main { padding: 0.9rem 0.75rem 5.5rem; }
       .mobile-bottom-nav { display: flex; }
     }
     .login-screen {
-      background: linear-gradient(160deg, #0b1220 0%, #1e1b4b 55%, #312e81 100%) !important;
+      background:
+        radial-gradient(ellipse at 20% 20%, rgba(245,158,11,0.18), transparent 45%),
+        radial-gradient(ellipse at 80% 70%, rgba(15,118,110,0.35), transparent 50%),
+        linear-gradient(160deg, #042f2e 0%, #115e59 50%, #134e4a 100%) !important;
     }
     .login-box {
-      border-radius: 20px !important;
+      border-radius: 22px !important;
       box-shadow: 0 25px 60px rgba(0,0,0,0.35) !important;
-      border: 1px solid rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12);
+      background: #fffdf9 !important;
+    }
+    .login-box .btn-primary { background: #0f766e !important; border-color: #0f766e !important; }
+    .result-pop {
+      position: fixed; top: 1.25rem; right: 1.25rem; z-index: 99999;
+      min-width: 280px; max-width: 380px;
+      background: #fffdf9;
+      border: 2px solid #0f766e;
+      border-radius: 16px;
+      box-shadow: 0 16px 40px rgba(15,118,110,0.22);
+      padding: 0.95rem 1.1rem;
+      animation: resultPopIn 0.25s ease-out;
+      font-family: inherit;
+    }
+    .result-pop .rp-title {
+      font-weight: 800; color: #0f766e; font-size: 0.95rem; margin-bottom: 0.25rem;
+    }
+    .result-pop .rp-body { font-size: 0.88rem; color: #334155; line-height: 1.4; }
+    .result-pop .rp-bar {
+      height: 3px; background: #ccfbf1; border-radius: 99px; margin-top: 0.65rem; overflow: hidden;
+    }
+    .result-pop .rp-bar > i {
+      display: block; height: 100%; width: 100%; background: #0f766e;
+      transform-origin: left center;
+      animation: resultPopBar 3s linear forwards;
+    }
+    @keyframes resultPopIn {
+      from { opacity: 0; transform: translateY(-12px) scale(0.96); }
+      to { opacity: 1; transform: none; }
+    }
+    @keyframes resultPopBar {
+      from { transform: scaleX(1); }
+      to { transform: scaleX(0); }
     }
   </style>
 </head>
@@ -2217,39 +2276,66 @@ Arjun Kumar, arjun@email.com, 9123456780, hr, intern, 45, 2026-09-15T10:00, 48">
     // IDs of candidates who just finished — green highlight in Results for 30s
     var justFinishedUntil = {};
 
+    // Track which result popups already shown this session (no repeats)
+    window.__qrsResultPopupShown = window.__qrsResultPopupShown || {};
+
+    function showResultReceivedPopup(message) {
+      // Only one popup at a time; lasts exactly 3 seconds
+      try {
+        document.querySelectorAll('.result-pop').forEach(function(el) { el.remove(); });
+      } catch (e) {}
+      const pop = document.createElement('div');
+      pop.className = 'result-pop';
+      pop.setAttribute('role', 'status');
+      pop.innerHTML =
+        '<div class="rp-title">Result received</div>' +
+        '<div class="rp-body"></div>' +
+        '<div class="rp-bar"><i></i></div>';
+      pop.querySelector('.rp-body').textContent = message;
+      document.body.appendChild(pop);
+      setTimeout(function() {
+        try { pop.remove(); } catch (e) {}
+      }, 3000);
+    }
+
     function notifyNewCompletions(beforeMap, afterList) {
       if (!afterList || !afterList.length) return;
       const newlyDone = [];
       afterList.forEach(function(a) {
         if (!a || !a.id) return;
+        // Never popup again for same candidate in this browser session
+        if (window.__qrsResultPopupShown[a.id]) return;
         const prev = beforeMap[a.id];
         const nowDone = a.status === 'completed' || !!a.completedAt || (a.score != null && a.score !== '');
         const wasDone = prev && (prev.status === 'completed' || prev.completedAt || (prev.score != null && prev.score !== ''));
         if (nowDone && !wasDone) {
           newlyDone.push(a);
-        } else if (prev && nowDone && prev.score !== a.score && a.score != null) {
+        } else if (prev && nowDone && prev.score !== a.score && a.score != null && !wasDone) {
           newlyDone.push(a);
         }
       });
       if (!newlyDone.length) return;
+      // Mark shown immediately so polling never repeats
+      newlyDone.forEach(function(a) { window.__qrsResultPopupShown[a.id] = true; });
       const until = Date.now() + 30000;
       newlyDone.forEach(function(a) { justFinishedUntil[a.id] = until; });
       const names = newlyDone.slice(0, 3).map(function(a) {
         return (a.name || a.id) + (a.score != null ? (' (' + a.score + '/100)') : '');
       }).join(', ');
+      const msg = names + (newlyDone.length > 3 ? (' +' + (newlyDone.length - 3) + ' more') : '');
       try {
-        if (typeof showToast === 'function') {
-          showToast('✅ Result received: ' + names + (newlyDone.length > 3 ? (' +' + (newlyDone.length - 3) + ' more') : ''));
-        }
-      } catch (e) {}
-      // Sound + browser notification on submit (feature 4)
+        showResultReceivedPopup(msg);
+      } catch (e) {
+        try { if (typeof showToast === 'function') showToast('Result received: ' + msg); } catch (e2) {}
+      }
+      // Sound + browser notification once
       try {
         if (typeof playAlertBeep === 'function') playAlertBeep();
       } catch (e) {}
       try {
         if ('Notification' in window) {
           if (Notification.permission === 'granted') {
-            newlyDone.slice(0, 3).forEach(function(a) {
+            newlyDone.slice(0, 1).forEach(function(a) {
               new Notification('QRS — Assessment completed', {
                 body: (a.name || a.id) + ' · ' + (a.role || '') + ' · Score ' +
                   (a.score != null ? a.score : '—') + '/100',
@@ -5865,6 +5951,11 @@ html += '<div style="margin-top:1rem;display:flex;gap:0.6rem;flex-wrap:wrap;">' 
     }
 
     function showToast(msg) {
+      // Result-received uses dedicated 3s popup — avoid double toast
+      if (msg && String(msg).indexOf('Result received') !== -1) {
+        try { showResultReceivedPopup(String(msg).replace(/^✅\s*/, '').replace(/^Result received:\s*/i, '')); } catch (e) {}
+        return;
+      }
       const t = document.createElement('div');
       t.className = 'toast';
       t.textContent = msg;

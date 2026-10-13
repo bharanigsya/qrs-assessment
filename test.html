@@ -82,21 +82,22 @@ body.a11y-high-contrast .btn-outline { border: 2px solid #000; }
 }
 .mcq-option input { margin-top: 0.2rem; width: 1.15rem; height: 1.15rem; flex-shrink: 0; }
 
-/* ===== Pure UI v2 — candidate ===== */
-body { background: #f1f5f9; }
+/* ===== Fresh unique candidate UI — warm paper + teal ===== */
+body { background: #f7f3ee !important; }
 .header {
-  background: #0f172a !important;
-  color: #f8fafc !important;
-  border-bottom: none !important;
-  box-shadow: 0 1px 0 rgba(255,255,255,0.04);
+  background: linear-gradient(105deg, #115e59 0%, #0f766e 50%, #134e4a 100%) !important;
+  color: #ecfdf5 !important;
+  border-bottom: 3px solid #f59e0b !important;
+  box-shadow: none !important;
 }
-.header .logo { color: #f8fafc !important; }
+.header .logo { color: #ecfdf5 !important; }
 #preStart .card {
   max-width: 680px !important;
-  border-radius: 20px;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 12px 40px rgba(15,23,42,0.08);
-  padding: 1.75rem 1.5rem;
+  border-radius: 22px;
+  border: 1px solid #e7e0d6;
+  background: #fffdf9;
+  box-shadow: 0 2px 0 #ebe4da, 0 16px 40px rgba(19,78,74,0.08);
+  padding: 1.85rem 1.55rem;
 }
 #preStart .welcome-tiles {
   display: grid;
@@ -112,36 +113,57 @@ body { background: #f1f5f9; }
   margin: 0 auto;
   padding: 1rem 1rem 2rem;
 }
-/* Camera: compact corner on desktop */
 #testUI .proctor-panel {
   position: fixed !important;
-  top: 72px !important;
+  top: 76px !important;
   right: 14px !important;
   width: 168px !important;
-  border-radius: 14px !important;
-  border: 2px solid #4f46e5 !important;
-  box-shadow: 0 12px 32px rgba(15,23,42,0.18) !important;
+  border-radius: 18px !important;
+  border: 2px solid #0f766e !important;
+  background: #fffdf9 !important;
+  box-shadow: 0 12px 32px rgba(15,118,110,0.2) !important;
   z-index: 100;
 }
 #testUI #cameraFeed { height: 112px !important; }
 #testUI .question-card {
-  border-left: 4px solid #4f46e5;
-  border-radius: 16px;
+  border-left: 5px solid #0f766e;
+  border-radius: 18px;
+  background: #fffdf9;
+  border: 1px solid #e7e0d6;
+  border-left-width: 5px;
   padding: 1.35rem 1.4rem;
+  box-shadow: 0 2px 0 #ebe4da;
 }
 #testUI .sticky-timer-bar {
-  border-radius: 14px;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgba(15,23,42,0.05);
+  border-radius: 16px;
+  border: 1px solid #e7e0d6;
+  background: #fffdf9;
+  box-shadow: 0 2px 0 #ebe4da;
 }
+#testUI .timer { color: #0f766e !important; }
 #sectionProgressBar {
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  border: 1px solid #e7e0d6;
+  background: #fffdf9;
 }
 #completedUI .card {
-  border-radius: 20px;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 12px 40px rgba(15,23,42,0.08);
+  border-radius: 22px;
+  border: 1px solid #e7e0d6;
+  background: #fffdf9;
+  box-shadow: 0 2px 0 #ebe4da, 0 16px 40px rgba(19,78,74,0.08);
+}
+.btn-primary, button.btn-primary {
+  background: #0f766e !important;
+  border-color: #0f766e !important;
+}
+.mcq-option.selected {
+  border-color: #0f766e !important;
+  background: #ccfbf1 !important;
+  box-shadow: 0 0 0 3px rgba(15,118,110,0.15) !important;
+}
+.mcq-option:hover, .mcq-option:focus-within {
+  border-color: #0f766e !important;
+  background: #f0fdfa !important;
 }
 @media (max-width: 768px) {
   #testUI .proctor-panel {
@@ -152,7 +174,7 @@ body { background: #f1f5f9; }
     left: 0 !important;
     width: 100% !important;
     max-height: 38vh;
-    border-radius: 16px 16px 0 0 !important;
+    border-radius: 18px 18px 0 0 !important;
   }
   #testUI .test-layout { padding-bottom: 9rem; }
 }
